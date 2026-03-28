@@ -1,0 +1,433 @@
+<script setup lang="ts">
+import type { CandidateProfile, RoleSlot } from '~/composables/useApi'
+
+const props = defineProps<{
+  teamId: number
+  slots: RoleSlot[]
+}>()
+
+const emit = defineEmits<{
+  done: []
+}>()
+
+const config = useRuntimeConfig()
+const api = useApi()
+
+type Phase = 'hunting' | 'selecting' | 'confirming'
+const phase = ref<Phase>('hunting')
+
+const pool = ref<Record<string, CandidateProfile[]>>({ pm: [], swe: [], designer: [] })
+
+const selectedPm = ref<string | null>(null)
+const selectedSwe = ref<string[]>([])
+const selectedDesigner = ref<string | null>(null)
+const confirmError = ref('')
+const streamError = ref('')
+const fromCache = ref(false)
+const isRefetching = ref(false)
+
+const ROLES = [
+  { key: 'pm',       label: 'Product Manager',  badge: 'PM',     need: 1 },
+  { key: 'swe',      label: 'Software Engineer', badge: 'SWE',    need: 2 },
+  { key: 'designer', label: 'Designer',          badge: 'Design', need: 1 },
+]
+
+// ── Slot lookup ───────────────────────────────────────────────────────────────
+
+function getSlot(role: string, index: number): RoleSlot | undefined {
+  return props.slots.find(s => s.role === role && s.slot_index === index)
+}
+
+// ── Selection helpers ─────────────────────────────────────────────────────────
+
+function toggle(role: string, handle: string) {
+  if (phase.value !== 'selecting') return
+  if (role === 'pm') {
+    selectedPm.value = selectedPm.value === handle ? null : handle
+  } else if (role === 'designer') {
+    selectedDesigner.value = selectedDesigner.value === handle ? null : handle
+  } else if (role === 'swe') {
+    const already = selectedSwe.value.includes(handle)
+    if (already) {
+      selectedSwe.value = selectedSwe.value.filter(h => h !== handle)
+    } else if (selectedSwe.value.length < 2) {
+      selectedSwe.value = [...selectedSwe.value, handle]
+    }
+  }
+}
+
+function isSelected(role: string, handle: string): boolean {
+  if (role === 'pm') return selectedPm.value === handle
+  if (role === 'designer') return selectedDesigner.value === handle
+  if (role === 'swe') return selectedSwe.value.includes(handle)
+  return false
+}
+
+function selectedCount(role: string): number {
+  if (role === 'pm') return selectedPm.value ? 1 : 0
+  if (role === 'designer') return selectedDesigner.value ? 1 : 0
+  if (role === 'swe') return selectedSwe.value.length
+  return 0
+}
+
+const canConfirm = computed(
+  () => selectedPm.value !== null && selectedSwe.value.length === 2 && selectedDesigner.value !== null
+)
+
+// ── SSE stream ────────────────────────────────────────────────────────────────
+
+let es: EventSource | null = null
+
+function startStream(force = false) {
+  const base = `${config.public.apiBase}/teams/${props.teamId}/headhunt/stream`
+  const url = force ? `${base}?force=true` : base
+  es = new EventSource(url)
+
+  es.onmessage = (event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data as string)
+      if (data.cached === true && !data.done) {
+        fromCache.value = true
+        return
+      }
+      if (data.done) {
+        es?.close()
+        es = null
+        isRefetching.value = false
+        phase.value = 'selecting'
+        return
+      }
+      if (data.error) {
+        streamError.value = data.error as string
+        return
+      }
+      if (data.role && data.candidate) {
+        pool.value[data.role] = [...(pool.value[data.role] ?? []), data.candidate as CandidateProfile]
+      }
+    } catch { /* skip malformed events */ }
+  }
+
+  es.onerror = () => {
+    es?.close()
+    es = null
+    isRefetching.value = false
+    phase.value = 'selecting'
+  }
+}
+
+async function refetchCandidates() {
+  isRefetching.value = true
+  fromCache.value = false
+  streamError.value = ''
+  phase.value = 'hunting'
+  pool.value = { pm: [], swe: [], designer: [] }
+  selectedPm.value = null
+  selectedSwe.value = []
+  selectedDesigner.value = null
+
+  es?.close()
+  es = null
+
+  try {
+    await api.clearHeadhuntCache(props.teamId)
+  } catch { /* cache clear is best-effort */ }
+
+  startStream(true)
+}
+
+// ── Confirm selections ────────────────────────────────────────────────────────
+
+async function confirmSelections() {
+  if (!canConfirm.value) return
+  confirmError.value = ''
+  phase.value = 'confirming'
+  try {
+    const pmSlot = getSlot('pm', 0)
+    if (pmSlot && selectedPm.value)
+      await api.selectCandidate(props.teamId, pmSlot.id, selectedPm.value)
+
+    const sweSlot0 = getSlot('swe', 0)
+    if (sweSlot0 && selectedSwe.value[0])
+      await api.selectCandidate(props.teamId, sweSlot0.id, selectedSwe.value[0])
+
+    const sweSlot1 = getSlot('swe', 1)
+    if (sweSlot1 && selectedSwe.value[1])
+      await api.selectCandidate(props.teamId, sweSlot1.id, selectedSwe.value[1])
+
+    const designerSlot = getSlot('designer', 0)
+    if (designerSlot && selectedDesigner.value)
+      await api.selectCandidate(props.teamId, designerSlot.id, selectedDesigner.value)
+
+    emit('done')
+  } catch (e: any) {
+    confirmError.value = e?.data?.detail ?? e?.message ?? 'Failed to save selections.'
+    phase.value = 'selecting'
+  }
+}
+
+function skipOverlay() {
+  es?.close()
+  emit('done')
+}
+
+onMounted(() => startStream())
+onUnmounted(() => es?.close())
+</script>
+
+<template>
+  <div class="fixed inset-0 z-50 flex flex-col bg-slate-950 overflow-hidden">
+
+    <!-- ── Header ─────────────────────────────────────────────────────────── -->
+    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-slate-800">
+      <div class="flex items-center gap-4">
+        <span class="text-lg font-bold text-white tracking-tight">Clone.dna</span>
+        <span class="text-slate-600">|</span>
+        <span v-if="phase === 'hunting'" class="text-slate-300 text-sm font-medium flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+          Head Hunting Candidates<span class="dots-anim"></span>
+        </span>
+        <span v-else-if="phase === 'selecting'" class="text-white text-sm font-semibold">
+          Build Your Team
+        </span>
+        <span v-else class="text-slate-300 text-sm font-medium flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+          Saving selections<span class="dots-anim"></span>
+        </span>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <!-- Per-role slot fill status -->
+        <template v-if="phase === 'selecting'">
+          <span
+            v-for="role in ROLES"
+            :key="role.key"
+            class="text-xs font-medium px-2 py-1 border transition-colors"
+            :class="selectedCount(role.key) === role.need
+              ? 'border-green-600 text-green-400 bg-green-950/50'
+              : 'border-slate-700 text-slate-500'"
+          >
+            {{ role.badge }} {{ selectedCount(role.key) }}/{{ role.need }}
+          </span>
+        </template>
+        <!-- Cache indicator + refetch -->
+        <template v-if="phase === 'selecting'">
+          <span v-if="fromCache" class="text-xs text-slate-600 border border-slate-800 px-2 py-1">
+            cached
+          </span>
+          <button
+            class="text-xs border px-3 py-1 transition-colors disabled:opacity-40"
+            :class="isRefetching
+              ? 'border-slate-700 text-slate-600 cursor-not-allowed'
+              : 'border-slate-700 text-slate-400 hover:border-blue-600 hover:text-blue-400'"
+            :disabled="isRefetching"
+            @click="refetchCandidates"
+          >
+            {{ isRefetching ? 'Fetching...' : '↺ Refetch' }}
+          </button>
+        </template>
+        <span v-if="streamError" class="text-xs text-red-400 max-w-sm truncate" :title="streamError">
+          ⚠ {{ streamError }}
+        </span>
+        <button
+          class="text-xs text-slate-600 hover:text-slate-300 transition-colors ml-2"
+          @click="skipOverlay"
+        >
+          Skip →
+        </button>
+      </div>
+    </div>
+
+    <!-- ── Three columns ──────────────────────────────────────────────────── -->
+    <div class="flex-1 grid grid-cols-3 divide-x divide-slate-800 min-h-0">
+      <div
+        v-for="role in ROLES"
+        :key="role.key"
+        class="flex flex-col min-h-0"
+      >
+        <!-- Column header -->
+        <div class="flex-shrink-0 px-6 py-4 border-b border-slate-800">
+          <div class="flex items-center justify-between mb-3">
+            <div>
+              <p
+                class="text-xs font-bold uppercase tracking-widest"
+                :class="{
+                  'text-amber-400': role.key === 'pm',
+                  'text-blue-400': role.key === 'swe',
+                  'text-purple-400': role.key === 'designer',
+                }"
+              >{{ role.badge }}</p>
+              <p class="text-slate-500 text-xs mt-0.5">{{ role.label }}</p>
+            </div>
+            <span class="text-xs tabular-nums text-slate-600">
+              {{ (pool[role.key] ?? []).length }}<span class="text-slate-700">/10</span>
+            </span>
+          </div>
+          <!-- Progress bar -->
+          <div class="h-px bg-slate-800 overflow-hidden">
+            <div
+              class="h-full transition-all duration-500 ease-out"
+              :class="{
+                'bg-amber-500': role.key === 'pm',
+                'bg-blue-500': role.key === 'swe',
+                'bg-purple-500': role.key === 'designer',
+              }"
+              :style="{ width: `${(pool[role.key] ?? []).length * 10}%` }"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Candidate list -->
+        <div class="flex-1 overflow-y-auto p-3">
+          <TransitionGroup name="slide-up" tag="div" class="space-y-2">
+            <component
+              :is="phase === 'selecting' ? 'button' : 'div'"
+              v-for="candidate in pool[role.key]"
+              :key="candidate.github_handle"
+              class="w-full text-left p-3 border transition-colors"
+              :class="isSelected(role.key, candidate.github_handle)
+                ? {
+                    'border-amber-500 bg-amber-950/40': role.key === 'pm',
+                    'border-blue-500 bg-blue-950/40': role.key === 'swe',
+                    'border-purple-500 bg-purple-950/40': role.key === 'designer',
+                  }
+                : phase === 'selecting'
+                  ? 'border-slate-800 bg-slate-900/60 hover:border-slate-600 cursor-pointer'
+                  : 'border-slate-800 bg-slate-900/60'"
+              @click="toggle(role.key, candidate.github_handle)"
+            >
+              <div class="flex items-center gap-2.5">
+                <img
+                  v-if="candidate.avatar_url"
+                  :src="candidate.avatar_url"
+                  :alt="candidate.name"
+                  class="w-7 h-7 flex-shrink-0 object-cover grayscale"
+                  :class="isSelected(role.key, candidate.github_handle) ? 'grayscale-0' : ''"
+                />
+                <div
+                  v-else
+                  class="w-7 h-7 flex-shrink-0 bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400"
+                >
+                  {{ (candidate.name ?? '?')[0]?.toUpperCase() }}
+                </div>
+                <div class="min-w-0 flex-1">
+                  <p
+                    class="text-sm font-medium truncate transition-colors"
+                    :class="isSelected(role.key, candidate.github_handle) ? 'text-white' : 'text-slate-400'"
+                  >{{ candidate.name || candidate.github_handle }}</p>
+                  <p class="text-xs text-slate-600 truncate">{{ candidate.location || `@${candidate.github_handle}` }}</p>
+                </div>
+                <span
+                  v-if="isSelected(role.key, candidate.github_handle)"
+                  class="flex-shrink-0 text-xs font-bold"
+                  :class="{
+                    'text-amber-400': role.key === 'pm',
+                    'text-blue-400': role.key === 'swe',
+                    'text-purple-400': role.key === 'designer',
+                  }"
+                >✓</span>
+              </div>
+
+              <!-- Skills shown in selecting phase -->
+              <div v-if="phase === 'selecting' && candidate.skills?.length" class="mt-2 flex flex-wrap gap-1">
+                <span
+                  v-for="skill in candidate.skills.slice(0, 3)"
+                  :key="skill"
+                  class="text-xs border border-slate-700 text-slate-600 px-1.5 py-0.5"
+                >{{ skill }}</span>
+              </div>
+            </component>
+          </TransitionGroup>
+
+          <!-- Skeleton placeholders while hunting -->
+          <div v-if="phase === 'hunting'" class="space-y-2 mt-2">
+            <div
+              v-for="i in Math.max(0, 10 - (pool[role.key] ?? []).length)"
+              :key="`sk-${i}`"
+              class="h-11 border border-slate-800/40 bg-slate-900/20 animate-pulse"
+            ></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Footer (selecting / confirming) ───────────────────────────────── -->
+    <Transition name="fade">
+      <div
+        v-if="phase !== 'hunting'"
+        class="flex-shrink-0 border-t border-slate-800 bg-slate-900/80 px-8 py-4 flex items-center justify-between"
+      >
+        <div class="text-sm">
+          <span v-if="!canConfirm" class="text-slate-500">
+            Select 1 PM · 2 SWE · 1 Designer to confirm
+          </span>
+          <span v-else class="text-green-400 font-medium">All slots ready</span>
+          <p v-if="confirmError" class="text-red-400 text-xs mt-0.5">{{ confirmError }}</p>
+        </div>
+        <div class="flex items-center gap-4">
+          <button
+            class="text-sm text-slate-500 hover:text-slate-300 transition-colors"
+            :disabled="phase === 'confirming'"
+            @click="skipOverlay"
+          >
+            Fill manually later
+          </button>
+          <button
+            class="px-6 py-2 text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            :class="canConfirm
+              ? 'bg-blue-600 text-white hover:bg-blue-500'
+              : 'bg-slate-800 text-slate-500'"
+            :disabled="!canConfirm || phase === 'confirming'"
+            @click="confirmSelections"
+          >
+            {{ phase === 'confirming' ? 'Saving...' : 'Confirm Team →' }}
+          </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Confirming overlay spinner ─────────────────────────────────────── -->
+    <Transition name="fade">
+      <div
+        v-if="phase === 'confirming'"
+        class="absolute inset-0 bg-slate-950/70 flex items-center justify-center"
+      >
+        <div class="text-center space-y-3">
+          <div class="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p class="text-white font-semibold">Building your team</p>
+          <p class="text-slate-500 text-sm">Fetching full profiles<span class="dots-anim"></span></p>
+        </div>
+      </div>
+    </Transition>
+  </div>
+</template>
+
+<style scoped>
+.slide-up-enter-active {
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+.slide-up-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+.dots-anim::after {
+  content: '';
+  animation: dots 1.4s steps(4, end) infinite;
+}
+@keyframes dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+</style>
