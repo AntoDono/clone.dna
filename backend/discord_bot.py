@@ -22,7 +22,8 @@ import discord
 
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage, DiscordPairing
-from trainer import claude_chat
+from trainer import openrouter_chat
+# from trainer import claude_chat
 from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
 
@@ -169,7 +170,8 @@ async def _stream_speaker(
                 pass
 
     task = asyncio.to_thread(
-        claude_chat,
+        # claude_chat,
+        openrouter_chat,
         candidate=candidate.to_dict(),
         history=history,
         emit=emit,
