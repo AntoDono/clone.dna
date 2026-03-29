@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Collapsible list of GitHub candidates from a headhunt or search result.
+ * Clicking a candidate expands their full ProfilingTree profile.
+ * "Select Candidate" button emits the candidate back to the parent for slot assignment.
+ *
+ * Props: candidates (CandidateProfile[]), teamId (number), slotId (number)
+ * Emits: selected (CandidateProfile)
+ */
 import type { CandidateProfile } from '~/composables/useApi'
 
 const props = defineProps<{

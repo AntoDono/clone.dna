@@ -8,6 +8,11 @@ const KNOWN_COMMANDS = new Set([
 
 const JSON_CMD_PATTERN = /```(?:json)?\s*\n?\s*(\{[\s\S]*?\})\s*\n?\s*```|\{[\t ]*"name"[\t ]*:[\t ]*"[^"]+?"[\t ]*,[\t ]*"arguments"[\t ]*:[\t ]*\{[\s\S]*?\}\s*\}/g
 
+/**
+ * Convert inline JSON command objects in message content to [[TOOL_CALL:...]] markers
+ * for consistent rendering in ChatPanel. Normalizes tool calls regardless of whether
+ * they came from SSE tool_call events or inline JSON in the response text.
+ */
 function convertInlineJsonToToolMarkers(content: string): string {
   return content.replace(JSON_CMD_PATTERN, (fullMatch, fencedBody) => {
     const raw = fencedBody ?? fullMatch
@@ -22,6 +27,11 @@ function convertInlineJsonToToolMarkers(content: string): string {
   })
 }
 
+/**
+ * Manages team chat state and SSE streaming for both direct messages and PM orchestration.
+ * Handles thread switching, message history, real-time token streaming, tool call rendering,
+ * and stream cancellation via AbortController.
+ */
 export function useTeamChat(teamId: number, apiBase: string) {
   const api = useApi()
 
@@ -39,6 +49,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     return threads.value[threadKey(activeThread.value)] ?? []
   }
 
+  // Switch active thread and scroll to bottom
   function setThread(t: ActiveThread) {
     activeThread.value = t
     scrollToBottom()
@@ -46,6 +57,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
 
   // ── Message history ───────────────────────────────────────────────────────
 
+  // Fetch full message history from backend for all threads
   async function loadHistory(handles: string[]) {
     const keys = [...handles, 'orchestrate']
     await Promise.all(keys.map(async (key) => {
@@ -86,6 +98,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     useGrok.value = !useGrok.value
   }
 
+  // Abort the active SSE stream and reset streaming state
   function stopStreaming() {
     if (abortController) {
       abortController.abort()
@@ -110,6 +123,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
 
   // ── Direct message ────────────────────────────────────────────────────────
 
+  // POST to /build/chat and stream SSE response tokens
   async function sendDm(candidate: CandidateProfile, message: string) {
     const key = candidate.github_handle
     streaming.value = true
@@ -232,6 +246,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
 
   // ── Orchestrate ───────────────────────────────────────────────────────────
 
+  // POST to /build/orchestrate and stream multi-speaker SSE
   async function sendOrchestrate(prompt: string) {
     const key = 'orchestrate'
     streaming.value = true
@@ -341,6 +356,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     streamingHandle.value = null
   }
 
+  // Enter sends message; Shift+Enter inserts newline
   function handleKeydown(e: KeyboardEvent) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()

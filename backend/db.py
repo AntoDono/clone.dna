@@ -1,3 +1,12 @@
+"""
+Database initialization — SQLite setup via Peewee.
+
+Enables WAL journal mode and foreign key enforcement on every connection.
+Runs _migrate_candidate_columns() on startup to add DNA-status columns that were
+introduced after the initial schema (Peewee's safe=True only creates missing tables,
+not missing columns).
+"""
+
 import os
 from peewee import SqliteDatabase
 from dotenv import load_dotenv

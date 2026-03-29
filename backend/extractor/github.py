@@ -1,3 +1,5 @@
+"""GitHub API integration for candidate search, profile extraction, and skill inference from bios and repo metadata."""
+
 import logging
 import os
 import random
@@ -137,6 +139,7 @@ ROLE_SOFT_SKILL_FALLBACKS: dict[str, list[str]] = {
 # ── HTTP helpers ──────────────────────────────────────────────────────────────
 
 def _headers() -> dict:
+    """Build GitHub API request headers, including Bearer token if GITHUB_TOKEN is set."""
     token = os.getenv("GITHUB_TOKEN", "").strip()
     h = {"Accept": "application/vnd.github.v3+json"}
     # Only attach token if it looks like a real GitHub token (not the placeholder)
@@ -149,6 +152,7 @@ def _headers() -> dict:
 
 
 def _get(url: str, params: Optional[dict] = None) -> Optional[dict | list]:
+    """Make an authenticated GET request to the GitHub API, returning parsed JSON or None on error."""
     try:
         resp = requests.get(url, headers=_headers(), params=params, timeout=10)
         if resp.status_code == 200:
@@ -175,6 +179,7 @@ def search_users_raw(role: str, limit: int = 5) -> list[str]:
 
 
 def search_candidates(role: str, limit: int = 5) -> list[dict]:
+    """Search GitHub for candidates by role and build full profiles for each handle. Expensive — fetches repos and languages per candidate."""
     query = ROLE_QUERIES.get(role, f"{role} developer in:bio")
     data = _get(
         f"{GITHUB_API}/search/users",
@@ -192,6 +197,7 @@ def search_candidates(role: str, limit: int = 5) -> list[dict]:
 
 
 def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
+    """Fetch a GitHub user's public data and build a structured candidate profile. Infers technical skills from languages/topics and soft skills from bio patterns."""
     user = _get(f"{GITHUB_API}/users/{handle}")
     if not user or not isinstance(user, dict):
         return None

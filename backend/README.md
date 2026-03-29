@@ -127,7 +127,7 @@ The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in seq
 
 2. **Pair generation** (`trainer/grok.py`) — sends code chunks to Grok-4 (70B teacher). The teacher reads the developer's actual code and generates the *instruction* side of each pair (the problem statement, architectural context, or task description that would naturally produce that code). The developer's code is the *completion*. Results are cached to `GROK_CACHE_DIR` so reruns skip the API call. Typically generates 18–60 pairs per candidate.
 
-3. **LoRA training** (`trainer/training.py`) — freezes the base model and trains a LoRA adapter (rank 64, alpha 128) using PEFT + HuggingFace `Trainer`. Training pairs are mixed with Alpaca-cleaned examples and tool-use demonstrations to preserve general capability.
+3. **LoRA training** (`trainer/training.py`) — freezes the base model and trains a LoRA adapter (rank=32, alpha=128) using PEFT + HuggingFace `Trainer`. Training pairs are mixed with Alpaca-cleaned examples (50% ratio) and 24 tool-use demonstrations to preserve general capability.
 
 4. **`.dna` block write** — saves the adapter weights plus five metadata files to `dnas/{team_id}/{handle}/`:
    - `manifest.json` — candidate metadata, base model, rank/alpha, eval summary
@@ -181,14 +181,60 @@ Because specialists share a workspace directory (`agent-workspace/{team_id}/`), 
 {"done": true}                                    ← orchestration complete
 ```
 
+## SSE Event Schemas
+
+### Clone DNA stream (`GET /teams/{id}/clone-dna/stream`)
+
+```json
+{"event": "phase",     "data": {"phase": "collecting|generating|training|saving", "candidate": "handle"}}
+{"event": "message",   "data": {"message": "Fetching repos...", "candidate": "handle"}}
+{"event": "step",      "data": {"step": 12, "total": 48, "loss": 1.82, "candidate": "handle"}}
+{"event": "loss",      "data": {"loss": 1.74, "bestLoss": 1.68, "candidate": "handle"}}
+{"event": "path",      "data": {"path": "dnas/1/handle", "candidate": "handle"}}
+{"event": "error",     "data": {"error": "...", "candidate": "handle"}}
+{"event": "done",      "data": {"total": 4, "succeeded": 4, "failed": 0}}
+{"event": "heartbeat", "data": {}}
+```
+
+### Build chat stream (`POST /teams/{id}/build/chat`)
+
+```json
+{"event": "token",       "data": {"token": "Here is", "handle": "alice-chen"}}
+{"event": "thinking",    "data": {"on": true}}
+{"event": "tool_call",   "data": {"name": "write_file", "arguments": {"path": "main.go", "content": "..."}}}
+{"event": "tool_result", "data": {"name": "write_file", "output": "OK", "success": true}}
+{"event": "done",        "data": {}}
+```
+
+### Orchestrate stream (`POST /teams/{id}/build/orchestrate`)
+
+```json
+{"event": "phase",    "data": {"phase": "start", "prompt": "Build a REST API"}}
+{"event": "speaker",  "data": {"handle": "pm-handle", "role": "pm"}}
+{"event": "token",    "data": {"token": "I'll break this into...", "handle": "pm-handle"}}
+{"event": "phase",    "data": {"phase": "specialist", "speaker": "alice-chen", "task": "Implement the user endpoints"}}
+{"event": "token",    "data": {"token": "Sure, starting with...", "handle": "alice-chen"}}
+{"event": "done",     "data": {}}
+```
+
+### Headhunt stream (`GET /teams/{id}/headhunt/stream`)
+
+```json
+{"event": "candidate", "data": {"role": "swe", "github_handle": "...", "name": "...", "skills": [...], ...}}
+{"event": "done",      "data": {"total": 15, "cached": false}}
+{"event": "error",     "data": {"role": "pm", "error": "GitHub rate limit exceeded"}}
+```
+
+---
+
 ## Data Model (SQLite)
 
 | Table | Key Columns |
 |---|---|
 | `Team` | `id`, `name`, `created_at` |
-| `RoleSlot` | `id`, `team_id`, `role` (PM/SWE/Designer/…), `candidate_handle`, `candidate_profile_json`, `dna_status` |
-| `Message` | `id`, `team_id`, `role`, `sender` (user/assistant), `content`, `created_at` |
-| `CloneJob` | `id`, `team_id`, `status`, `log`, `started_at`, `finished_at` |
+| `RoleSlot` | `id`, `team_id` (FK), `role` (`pm`/`swe`/`designer`), `slot_index`, `filled` (bool) |
+| `Candidate` | `id`, `slot_id` (FK), `github_handle`, `name`, `avatar_url`, `bio`, `location`, `followers`, `public_repos`, `skills` (JSON), `soft_skills` (JSON), `languages` (JSON), `top_repos` (JSON), `description`, `system_prompt`, `dna_cloned` (bool), `dna_path`, `dna_cloned_at` |
+| `ChatMessage` | `id`, `team_id` (FK), `thread` (handle or `"orchestrate"`), `sender`, `content`, `created_at` |
 
 ## Loading a `.dna` Block Externally
 

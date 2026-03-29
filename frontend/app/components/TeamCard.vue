@@ -1,4 +1,11 @@
 <script setup lang="ts">
+/**
+ * Summary card for a team on the home page.
+ * Shows team name, creation date, and slot fill status badges.
+ * Links to /teams/{id}.
+ *
+ * Props: team (Team)
+ */
 import type { Team } from '~/composables/useApi'
 
 defineProps<{ team: Team }>()

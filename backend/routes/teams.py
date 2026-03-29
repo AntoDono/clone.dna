@@ -1,3 +1,11 @@
+"""
+Teams router — CRUD for teams and role slots.
+
+Each team has a fixed layout of 4 role slots (1 PM, 2 SWE, 1 Designer) created
+atomically on team creation. Deleting a team cascades to all slots, candidates,
+and chat messages.
+"""
+
 import json
 import secrets
 from datetime import datetime
@@ -26,6 +34,7 @@ class CreateTeamRequest(PydanticModel):
 
 @router.post("/teams", status_code=201)
 def create_team(body: CreateTeamRequest):
+    """Create a team with a fixed layout of 4 role slots (1 PM, 2 SWE, 1 Designer), generated atomically."""
     with db.atomic():
         pair_code = secrets.token_hex(3)
         team = Team.create(name=body.name.strip(), discord_pair_code=pair_code)
@@ -36,11 +45,13 @@ def create_team(body: CreateTeamRequest):
 
 @router.get("/teams")
 def list_teams():
+    """Return all teams ordered by creation date descending."""
     return [t.to_dict() for t in Team.select().order_by(Team.created_at.desc())]
 
 
 @router.get("/teams/{team_id}")
 def get_team(team_id: int):
+    """Return a single team with all role slots and their assigned candidates."""
     try:
         return Team.get_by_id(team_id).to_dict()
     except Team.DoesNotExist:
@@ -49,6 +60,7 @@ def get_team(team_id: int):
 
 @router.delete("/teams/{team_id}", status_code=204)
 def delete_team(team_id: int):
+    """Delete a team and all associated role slots, candidates, and messages."""
     try:
         Team.get_by_id(team_id).delete_instance(recursive=True)
     except Team.DoesNotExist:
@@ -58,6 +70,7 @@ def delete_team(team_id: int):
 # ── Shared helpers (also used by candidates router) ───────────────────────────
 
 def get_slot(team_id: int, slot_id: int) -> RoleSlot:
+    """Fetch a RoleSlot by ID, verifying it belongs to the specified team. Raises 404 if not found or team mismatch."""
     try:
         slot = RoleSlot.get_by_id(slot_id)
     except RoleSlot.DoesNotExist:
@@ -68,6 +81,7 @@ def get_slot(team_id: int, slot_id: int) -> RoleSlot:
 
 
 def save_candidate(slot: RoleSlot, profile: dict) -> dict:
+    """Persist a candidate profile to a slot inside a transaction, replacing any previous candidate and marking the slot as filled."""
     scalar = {k: v for k, v in profile.items() if k not in JSON_FIELDS}
     with db.atomic():
         Candidate.delete().where(Candidate.role_slot == slot).execute()

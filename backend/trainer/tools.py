@@ -137,6 +137,7 @@ def _safe_path(workspace: Path, relative: str) -> Path:
 
 
 def _exec_write_file(workspace: Path, args: dict) -> str:
+    """Create or overwrite a file in the workspace sandbox, creating parent directories as needed."""
     target = _safe_path(workspace, args["path"])
     target.parent.mkdir(parents=True, exist_ok=True)
     content = args["content"]
@@ -145,6 +146,7 @@ def _exec_write_file(workspace: Path, args: dict) -> str:
 
 
 def _exec_read_file(workspace: Path, args: dict) -> str:
+    """Read a file from the sandbox, returning up to 8,000 characters of content."""
     target = _safe_path(workspace, args["path"])
     if not target.exists():
         return f"Error: file not found: {args['path']}"
@@ -152,12 +154,14 @@ def _exec_read_file(workspace: Path, args: dict) -> str:
 
 
 def _exec_create_folder(workspace: Path, args: dict) -> str:
+    """Create a directory (and any required parents) in the workspace sandbox."""
     target = _safe_path(workspace, args["path"])
     target.mkdir(parents=True, exist_ok=True)
     return f"Created directory: {args['path']}"
 
 
 def _exec_list_files(workspace: Path, args: dict) -> str:
+    """List up to 50 entries in a workspace directory, with '/' suffix for subdirectories."""
     target = _safe_path(workspace, args.get("path", "."))
     if not target.exists():
         return f"Error: directory not found: {args.get('path', '.')}"
@@ -175,6 +179,7 @@ def _exec_list_files(workspace: Path, args: dict) -> str:
 
 
 def _exec_edit_file(workspace: Path, args: dict) -> str:
+    """Replace the first occurrence of old_string with new_string in a workspace file."""
     target = _safe_path(workspace, args["path"])
     if not target.exists():
         return f"Error: file not found: {args['path']}"
@@ -189,6 +194,7 @@ def _exec_edit_file(workspace: Path, args: dict) -> str:
 
 
 def _exec_run_command(workspace: Path, args: dict) -> str:
+    """Execute a shell command in the workspace directory with a 30-second timeout, capturing stdout and stderr."""
     command = args["command"]
     try:
         result = subprocess.run(

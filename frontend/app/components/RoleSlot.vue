@@ -1,4 +1,13 @@
 <script setup lang="ts">
+/**
+ * Individual role slot card (PM / SWE / Designer).
+ * Filled state: shows candidate avatar, name, description, skills, and action buttons.
+ * Empty state: three input methods — GitHub scan trigger, website URL extraction,
+ * or resume text paste.
+ *
+ * Props: slot (RoleSlot), meta ({label, badge, desc}), isActive (bool), isScanning (bool), teamId (number)
+ * Emits: scan, remove, extracted, error
+ */
 import type { RoleSlot, CandidateProfile } from '~/composables/useApi'
 
 const props = defineProps<{
