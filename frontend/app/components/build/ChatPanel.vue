@@ -56,6 +56,7 @@ function tryExtractJsonCommand(text: string): ContentSegment[] {
     try {
       const parsed = JSON.parse(raw)
       if (parsed && typeof parsed.name === 'string' && KNOWN_COMMANDS.has(parsed.name) && parsed.arguments) {
+        console.log('[ChatPanel] Detected inline JSON command:', parsed.name, parsed.arguments)
         if (match.index > lastIndex) {
           const before = text.slice(lastIndex, match.index).replace(/^\n+|\n+$/g, '')
           if (before.trim()) segments.push({ type: 'text', data: before })

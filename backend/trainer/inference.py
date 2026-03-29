@@ -290,6 +290,16 @@ _TOOL_CALL_RE = re.compile(
     re.DOTALL,
 )
 
+_KNOWN_TOOL_NAMES = {
+    "run_command", "write_file", "read_file", "create_folder",
+    "list_files", "edit_file", "search_registry",
+}
+
+_INLINE_JSON_RE = re.compile(
+    r'```(?:json)?\s*\n?\s*(\{[\s\S]*?\})\s*\n?\s*```'
+    r'|\{[\t ]*"name"[\t ]*:[\t ]*"[^"]+?"[\t ]*,[\t ]*"arguments"[\t ]*:[\t ]*\{[\s\S]*?\}\s*\}',
+)
+
 
 def _parse_tool_calls(text: str) -> list[dict]:
     """Extract tool call dicts from text containing <tool_call>...</tool_call> blocks."""
@@ -300,6 +310,26 @@ def _parse_tool_calls(text: str) -> list[dict]:
             if "name" in data:
                 results.append(data)
         except json.JSONDecodeError:
+            pass
+    return results
+
+
+def _extract_inline_json_commands(text: str) -> list[dict]:
+    """Fallback: extract tool commands from inline JSON in the visible text.
+
+    Matches both bare JSON objects and JSON inside ```json``` fences, as long
+    as they have a known "name" and an "arguments" dict.
+    """
+    results = []
+    for match in _INLINE_JSON_RE.finditer(text):
+        raw = match.group(1) if match.group(1) else match.group(0)
+        try:
+            data = json.loads(raw)
+            if (isinstance(data, dict)
+                    and data.get("name") in _KNOWN_TOOL_NAMES
+                    and isinstance(data.get("arguments"), dict)):
+                results.append(data)
+        except (json.JSONDecodeError, TypeError):
             pass
     return results
 
@@ -549,6 +579,17 @@ def agent_chat(
             model, tokenizer, adapter_name, prompt, emit, max_new_tokens,
         )
         full_visible += visible
+
+        if not tool_calls:
+            tool_calls = _extract_inline_json_commands(visible)
+            if tool_calls:
+                logger.info(
+                    "agent_chat: no <tool_call> tags found, but extracted %d "
+                    "inline JSON command(s) from visible text",
+                    len(tool_calls),
+                )
+                for tc in tool_calls:
+                    emit({"tool_call": tc})
 
         if not tool_calls:
             break

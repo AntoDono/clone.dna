@@ -2,6 +2,26 @@ import type { CandidateProfile, ChatMessage } from '~/composables/useApi'
 
 export type ActiveThread = CandidateProfile | 'orchestrate'
 
+const KNOWN_COMMANDS = new Set([
+  'run_command', 'write_file', 'read_file', 'create_folder', 'list_files', 'edit_file',
+])
+
+const JSON_CMD_PATTERN = /```(?:json)?\s*\n?\s*(\{[\s\S]*?\})\s*\n?\s*```|\{[\t ]*"name"[\t ]*:[\t ]*"[^"]+?"[\t ]*,[\t ]*"arguments"[\t ]*:[\t ]*\{[\s\S]*?\}\s*\}/g
+
+function convertInlineJsonToToolMarkers(content: string): string {
+  return content.replace(JSON_CMD_PATTERN, (fullMatch, fencedBody) => {
+    const raw = fencedBody ?? fullMatch
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed.name === 'string' && KNOWN_COMMANDS.has(parsed.name) && parsed.arguments) {
+        console.log('[useTeamChat] Converted inline JSON command →', parsed.name, parsed.arguments)
+        return `\n[[TOOL_CALL:${JSON.stringify(parsed)}]]\n`
+      }
+    } catch { /* not valid JSON */ }
+    return fullMatch
+  })
+}
+
 export function useTeamChat(teamId: number, apiBase: string) {
   const api = useApi()
 
@@ -168,6 +188,11 @@ export function useTeamChat(teamId: number, apiBase: string) {
       }
     }
 
+    if (assistantIdx !== -1) {
+      const msg = threads.value[key]![assistantIdx]!
+      msg.content = convertInlineJsonToToolMarkers(msg.content)
+    }
+
     isThinking.value = false
     streaming.value = false
     streamingHandle.value = null
@@ -249,6 +274,15 @@ export function useTeamChat(teamId: number, apiBase: string) {
             }
           }
         } catch { /* skip malformed */ }
+      }
+    }
+
+    const orchMsgs = threads.value[key]
+    if (orchMsgs) {
+      for (const msg of orchMsgs) {
+        if (msg.sender !== 'user') {
+          msg.content = convertInlineJsonToToolMarkers(msg.content)
+        }
       }
     }
 
