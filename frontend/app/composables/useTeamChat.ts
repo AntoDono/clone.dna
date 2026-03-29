@@ -132,6 +132,22 @@ export function useTeamChat(teamId: number, apiBase: string) {
             }
             threads.value[key]![assistantIdx]!.content += data.token
             scrollToBottom()
+          } else if (data.tool_call) {
+            if (assistantIdx === -1) {
+              if (!threads.value[key]) threads.value[key] = []
+              threads.value[key].push({
+                id: Date.now() + 1, thread: key, sender: key,
+                content: '', created_at: new Date().toISOString(),
+              })
+              assistantIdx = threads.value[key].length - 1
+            }
+            threads.value[key]![assistantIdx]!.content += `\n[[TOOL_CALL:${JSON.stringify(data.tool_call)}]]\n`
+            scrollToBottom()
+          } else if (data.tool_result) {
+            if (assistantIdx !== -1) {
+              threads.value[key]![assistantIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
+              scrollToBottom()
+            }
           } else if (data.done && data.message_id) {
             if (assistantIdx !== -1) threads.value[key]![assistantIdx]!.id = data.message_id
           } else if (data.error) {
@@ -216,6 +232,15 @@ export function useTeamChat(teamId: number, apiBase: string) {
             const idx = getOrCreateBubbleIdx(data.speaker)
             threads.value[key]![idx]!.content += data.token
             scrollToBottom()
+          } else if (data.speaker && data.tool_call) {
+            const idx = getOrCreateBubbleIdx(data.speaker)
+            threads.value[key]![idx]!.content += `\n[[TOOL_CALL:${JSON.stringify(data.tool_call)}]]\n`
+            scrollToBottom()
+          } else if (data.speaker && data.tool_result) {
+            if (currentMsgIdx !== -1) {
+              threads.value[key]![currentMsgIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
+              scrollToBottom()
+            }
           }
         } catch { /* skip malformed */ }
       }

@@ -69,6 +69,7 @@ class Candidate(BaseModel):
     dna_cloned    = BooleanField(default=False)
     dna_path      = CharField(null=True)   # e.g. "dnas/1/torvalds"
     dna_cloned_at = DateTimeField(null=True)
+    system_prompt = TextField(null=True)   # generated identity prompt saved after clone-dna
 
     def to_dict(self) -> dict:
         return {
@@ -90,6 +91,7 @@ class Candidate(BaseModel):
             "dna_cloned": self.dna_cloned,
             "dna_path": self.dna_path,
             "dna_cloned_at": self.dna_cloned_at.isoformat() if self.dna_cloned_at else None,
+            "system_prompt": self.system_prompt,
         }
 
 

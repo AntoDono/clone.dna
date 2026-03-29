@@ -33,6 +33,58 @@ function threadKey(t: ActiveThread) {
 
 function isUserMsg(msg: ChatMessage) { return msg.sender === 'user' }
 
+interface ContentSegment {
+  type: 'text' | 'tool_call' | 'tool_result'
+  data: string | Record<string, any>
+}
+
+function parseMessageContent(content: string): ContentSegment[] {
+  const segments: ContentSegment[] = []
+  const regex = /\[\[(TOOL_CALL|TOOL_RESULT):(.*?)\]\]/gs
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      const text = content.slice(lastIndex, match.index).replace(/^\n+|\n+$/g, '')
+      if (text) segments.push({ type: 'text', data: text })
+    }
+    try {
+      const parsed = JSON.parse(match[2])
+      segments.push({ type: match[1] === 'TOOL_CALL' ? 'tool_call' : 'tool_result', data: parsed })
+    } catch {
+      segments.push({ type: 'text', data: match[0] })
+    }
+    lastIndex = match.index + match[0].length
+  }
+
+  if (lastIndex < content.length) {
+    const text = content.slice(lastIndex).replace(/^\n+/, '')
+    if (text) segments.push({ type: 'text', data: text })
+  }
+
+  return segments
+}
+
+function truncate(s: string, max: number = 120): string {
+  return s.length > max ? s.slice(0, max) + '...' : s
+}
+
+const TOOL_ICONS: Record<string, string> = {
+  write_file: '> write',
+  read_file: '> read',
+  create_folder: '> mkdir',
+  list_files: '> ls',
+  edit_file: '> edit',
+  run_command: '> $',
+}
+
+const expandedTools = ref<Set<number>>(new Set())
+function toggleExpand(idx: number) {
+  if (expandedTools.value.has(idx)) expandedTools.value.delete(idx)
+  else expandedTools.value.add(idx)
+}
+
 const inputModel = computed({
   get: () => props.inputText,
   set: (v) => emit('update:inputText', v),
@@ -128,12 +180,51 @@ const inputModel = computed({
             </div>
 
             <div
-              class="px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words"
+              class="px-4 py-2.5 text-sm leading-relaxed break-words"
               :class="isUserMsg(msg)
-                ? 'bg-blue-700/40 border border-blue-600/40 text-white'
+                ? 'bg-blue-700/40 border border-blue-600/40 text-white whitespace-pre-wrap'
                 : 'bg-slate-900/80 border border-slate-700/60 text-slate-200'"
             >
-              {{ msg.content }}
+              <template v-if="isUserMsg(msg)">{{ msg.content }}</template>
+              <template v-else>
+                <template v-for="(seg, sIdx) in parseMessageContent(msg.content)" :key="sIdx">
+                  <span v-if="seg.type === 'text'" class="whitespace-pre-wrap">{{ seg.data }}</span>
+
+                  <div v-else-if="seg.type === 'tool_call'" class="my-2 bg-slate-950 border border-slate-700 text-xs font-mono overflow-hidden">
+                    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-slate-800 bg-slate-900/60">
+                      <span class="text-blue-400 font-semibold">{{ TOOL_ICONS[(seg.data as any).name] || (seg.data as any).name }}</span>
+                      <span class="text-slate-500">{{ (seg.data as any).name }}</span>
+                    </div>
+                    <div class="px-3 py-2 text-slate-400 space-y-0.5">
+                      <template v-for="(val, argKey) in (seg.data as any).arguments" :key="argKey">
+                        <div class="flex gap-2">
+                          <span class="text-slate-500 shrink-0">{{ argKey }}:</span>
+                          <span
+                            class="text-slate-300 cursor-pointer"
+                            @click="toggleExpand(sIdx)"
+                          >{{ expandedTools.has(sIdx) ? String(val) : truncate(String(val)) }}</span>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <div v-else-if="seg.type === 'tool_result'" class="my-2 border text-xs font-mono overflow-hidden"
+                    :class="(seg.data as any).success ? 'bg-slate-950 border-green-800 border-l-2 border-l-green-500' : 'bg-slate-950 border-red-800 border-l-2 border-l-red-500'"
+                  >
+                    <div class="px-3 py-1.5 border-b border-slate-800 bg-slate-900/60">
+                      <span :class="(seg.data as any).success ? 'text-green-400' : 'text-red-400'">
+                        {{ (seg.data as any).success ? 'OK' : 'FAIL' }}
+                      </span>
+                      <span class="text-slate-500 ml-2">{{ (seg.data as any).name }}</span>
+                    </div>
+                    <div
+                      class="px-3 py-2 text-slate-400 whitespace-pre-wrap cursor-pointer"
+                      :class="(seg.data as any).name === 'run_command' ? 'bg-black/40' : ''"
+                      @click="toggleExpand(sIdx + 10000)"
+                    >{{ expandedTools.has(sIdx + 10000) ? (seg.data as any).output : truncate((seg.data as any).output, 200) }}</div>
+                  </div>
+                </template>
+              </template>
               <span
                 v-if="streaming && streamingHandle && !isUserMsg(msg) && msg === messages[messages.length - 1]"
                 class="inline-block w-1.5 h-3.5 bg-blue-400 animate-pulse ml-0.5 align-text-bottom"
