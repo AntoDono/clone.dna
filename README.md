@@ -6,7 +6,7 @@ Clone.dna turns a developer's public GitHub work into a portable, executable LoR
 
 > Built at the [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com) · Providence, RI · March 28–29, 2026
 >
-> **Live demo:** [yconai.anto.com](https://yconai.anto.com)
+> **Live demo:** [yconai.antodono.com](https://yconai.anto.com)
 
 ---
 
@@ -277,6 +277,6 @@ A `.dna` block is an executable benchmark of a developer's coding patterns, not 
 
 ---
 
-**Deployment:** [yconai.anto.com](https://yconai.anto.com)
+**Deployment:** [yconai.anto.com](https://yconai.antodono.com)
 
 *CLONE.dna · [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com)*
