@@ -3,6 +3,13 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   modules: ['@nuxtjs/tailwindcss'],
+
+  runtimeConfig: {
+    public: {
+      apiBase: 'https://ycon-shit.antodono.com',
+    },
+  },
+
   app: {
     head: {
       title: 'Clone.dna — Hire the Mind',
