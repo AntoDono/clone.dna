@@ -107,7 +107,7 @@ def clear_headhunt_cache(team_id: int):
 
 @router.get("/teams/{team_id}/roles/{slot_id}/search")
 def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
-  """Return cached or freshly fetched candidates for a specific role slot."""
+    """Return cached or freshly fetched candidates for a specific role slot."""
     slot = get_slot(team_id, slot_id)
     key = (team_id, slot_id)
     if not force and key in _search_cache:

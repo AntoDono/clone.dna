@@ -181,7 +181,7 @@ const inputModel = computed({
         <p class="text-sm text-slate-500">Select a team member to start chatting</p>
       </template>
       <div class="ml-auto flex items-center gap-2">
-        <span v-else class="px-2 py-0.5 text-xs border border-slate-700 text-slate-600">LOCAL</span>
+        <span class="px-2 py-0.5 text-xs border border-slate-700 text-slate-600">LOCAL</span>
       </div>
     </div>
 
