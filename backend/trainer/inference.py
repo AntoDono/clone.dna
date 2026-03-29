@@ -641,7 +641,15 @@ def stream_chat(
 
     if not system_prompt:
         name = profile.get("name") or adapter_name
-        system_prompt = _build_system_prompt(adapter_name, name, role, profile)
+        # Extract the most recent user message to power RAG-DNA retrieval
+        user_query = next(
+            (m.get("content", "") for m in reversed(history) if m.get("sender") == "user"),
+            None,
+        )
+        system_prompt = _build_system_prompt(
+            adapter_name, name, role, profile,
+            lora_path=lora_path, user_query=user_query,
+        )
 
     messages = _history_to_openai(system_prompt, history)
     prompt = _format_prompt(tokenizer, messages)
