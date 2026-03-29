@@ -31,6 +31,12 @@ export interface CandidateProfile {
   dna_path?: string | null
   /** ISO timestamp of when DNA cloning completed */
   dna_cloned_at?: string | null
+  /** Architectural patterns inferred by Grok semantic code analysis */
+  architectural_patterns?: string[]
+  /** Code quality signals inferred by Grok semantic code analysis */
+  code_quality_signals?: string[]
+  /** Problem domains inferred by Grok semantic code analysis */
+  domain_expertise?: string[]
 }
 
 /** A single message in a build workspace thread */
@@ -110,6 +116,9 @@ export const useApi = () => {
 
     clearHeadhuntCache: (teamId: number): Promise<void> =>
       $fetch(`${base}/teams/${teamId}/headhunt/cache`, { method: 'DELETE' }),
+
+    revokeBlock: (teamId: string, handle: string): Promise<{ status: string }> =>
+      $fetch(`${base}/registry/${teamId}/${handle}`, { method: 'DELETE' }),
 
     getBuildMessages: (teamId: number, thread: string): Promise<ChatMessage[]> =>
       $fetch(`${base}/teams/${teamId}/build/messages?thread=${encodeURIComponent(thread)}`),

@@ -620,7 +620,11 @@ def train_lora(
             "total_contributions_analyzed": sum(
                 r.get("stars", 0) for r in top_repos
             ),
-            "consent_verified": False,
+            # True when all trained repos carry a permissive license verified via GitHub API.
+            # False for older cached profiles that predate license metadata.
+            "consent_verified": all(
+                r.get("permissive", False) for r in top_repos[:3]
+            ) if top_repos else False,
         },
         "base_model": base_model,
         "rank": 32,

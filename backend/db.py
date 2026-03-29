@@ -24,11 +24,14 @@ def _migrate_candidate_columns() -> None:
     cursor = db.execute_sql("PRAGMA table_info(candidate)")
     existing = {row[1] for row in cursor.fetchall()}
     migrations = [
-        ("dna_cloned",          "INTEGER NOT NULL DEFAULT 0"),
-        ("dna_path",            "TEXT"),
-        ("dna_cloned_at",       "TEXT"),
-        ("system_prompt",       "TEXT"),
-        ("personality_profile", "TEXT"),
+        ("dna_cloned",             "INTEGER NOT NULL DEFAULT 0"),
+        ("dna_path",               "TEXT"),
+        ("dna_cloned_at",          "TEXT"),
+        ("system_prompt",          "TEXT"),
+        ("personality_profile",    "TEXT"),
+        ("architectural_patterns", "TEXT"),
+        ("code_quality_signals",   "TEXT"),
+        ("domain_expertise",       "TEXT"),
     ]
     for col, definition in migrations:
         if col not in existing:

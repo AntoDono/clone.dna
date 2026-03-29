@@ -91,6 +91,9 @@ class Candidate(BaseModel):
     dna_cloned_at = DateTimeField(null=True)
     system_prompt = TextField(null=True)   # generated identity prompt saved after clone-dna
     personality_profile = TextField(null=True)  # JSON: structured personality/style analysis
+    architectural_patterns = TextField(default="[]")  # JSON list from Grok semantic analysis
+    code_quality_signals   = TextField(default="[]")  # JSON list from Grok semantic analysis
+    domain_expertise       = TextField(default="[]")  # JSON list from Grok semantic analysis
 
     def to_dict(self) -> dict:
         return {
@@ -114,6 +117,9 @@ class Candidate(BaseModel):
             "dna_cloned_at": self.dna_cloned_at.isoformat() if self.dna_cloned_at else None,
             "system_prompt": self.system_prompt,
             "personality_profile": json.loads(self.personality_profile) if self.personality_profile else None,
+            "architectural_patterns": json.loads(self.architectural_patterns or "[]"),
+            "code_quality_signals":   json.loads(self.code_quality_signals or "[]"),
+            "domain_expertise":       json.loads(self.domain_expertise or "[]"),
         }
 
 

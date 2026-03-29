@@ -109,6 +109,18 @@ def collect_training_data(
         repo_name = repo_meta.get("name", "")
         if not repo_name:
             continue
+
+        # Only train on permissively-licensed repos (MIT, Apache-2.0, BSD, ISC, Unlicense).
+        # If license metadata is missing from the profile (older cache), allow it through.
+        if repo_meta.get("permissive") is False:
+            license_id = repo_meta.get("license") or "unknown"
+            emit({
+                "phase": "collecting",
+                "candidate": handle,
+                "message": f"Skipping {repo_name} — license '{license_id}' is not permissive (MIT/Apache-2.0 only)",
+            })
+            continue
+
         emit({
             "phase": "collecting",
             "candidate": handle,

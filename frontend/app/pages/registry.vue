@@ -4,9 +4,11 @@
  * Fetches all blocks from GET /registry and filters client-side by handle, skills, and tags.
  * Expandable block cards show eval metrics (style consistency, domain accuracy, loss).
  * Download link fetches a .zip of the full .dna block from GET /registry/{team_id}/{handle}/download.
+ * Revoke button calls DELETE /registry/{team_id}/{handle} to remove a block from the registry.
  */
 const config = useRuntimeConfig()
 const base = config.public.apiBase
+const api = useApi()
 
 interface DnaBlock {
   team_id: string
@@ -33,6 +35,8 @@ const blocks = ref<DnaBlock[]>([])
 const loading = ref(true)
 const search = ref('')
 const selectedBlock = ref<DnaBlock | null>(null)
+const revoking = ref<string | null>(null)
+const revokeError = ref('')
 
 async function fetchBlocks() {
   loading.value = true
@@ -70,6 +74,22 @@ function formatScore(val: number | null | undefined) {
 function formatLoss(val: number | null | undefined) {
   if (val == null) return '—'
   return val.toFixed(3)
+}
+
+async function revokeBlock(b: DnaBlock) {
+  if (!confirm(`Revoke ${b.handle}? This cannot be undone.`)) return
+  revoking.value = b.handle
+  revokeError.value = ''
+  try {
+    await api.revokeBlock(b.team_id, b.handle)
+    blocks.value = blocks.value.filter(x => !(x.team_id === b.team_id && x.handle === b.handle))
+    if (selectedBlock.value?.handle === b.handle) selectedBlock.value = null
+  } catch {
+    revokeError.value = `Failed to revoke ${b.handle}`
+    setTimeout(() => { revokeError.value = '' }, 5000)
+  } finally {
+    revoking.value = null
+  }
 }
 
 onMounted(fetchBlocks)
@@ -111,6 +131,13 @@ onMounted(fetchBlocks)
           class="w-full max-w-md border border-slate-700 focus:border-blue-500 bg-slate-900 text-white placeholder-slate-600 px-4 py-2.5 text-sm outline-none transition-colors"
         />
       </div>
+
+      <!-- Revoke error -->
+      <Transition name="fade-btn">
+        <div v-if="revokeError" class="mb-4 border border-red-700 bg-red-950/40 text-red-400 text-sm px-4 py-2">
+          {{ revokeError }}
+        </div>
+      </Transition>
 
       <!-- Loading -->
       <p v-if="loading" class="text-slate-500 text-sm">Loading registry...</p>
@@ -210,12 +237,21 @@ onMounted(fetchBlocks)
                 </span>
               </div>
 
-              <a
-                :href="downloadUrl(block)"
-                class="inline-block border border-blue-500 text-blue-400 font-medium px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-colors"
-              >
-                Download .dna
-              </a>
+              <div class="flex items-center gap-3">
+                <a
+                  :href="downloadUrl(block)"
+                  class="inline-block border border-blue-500 text-blue-400 font-medium px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-colors"
+                >
+                  Download .dna
+                </a>
+                <button
+                  class="border border-red-800 text-red-500 font-medium px-3 py-1.5 text-sm hover:bg-red-950/60 transition-colors disabled:opacity-40"
+                  :disabled="revoking === block.handle"
+                  @click.stop="revokeBlock(block)"
+                >
+                  {{ revoking === block.handle ? 'Revoking...' : 'Revoke' }}
+                </button>
+              </div>
             </div>
           </Transition>
         </div>
