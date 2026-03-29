@@ -4,7 +4,7 @@ LoRA adapter training — mints a candidate .dna block from instruction-response
 Pipeline
 --------
 1. collect_training_data()  — fetch raw code blobs from the candidate's GitHub repos
-2. generate_training_pairs() — call Grok-3 to generate (instruction, code) pairs
+2. generate_training_pairs() — call Grok-4 to generate (instruction, code) pairs
 3. generate_system_prompt()  — derive a persona system prompt from the candidate profile
 4. train_lora()              — PEFT LoRA fine-tune on the candidate pairs mixed with:
      - alpaca-cleaned base instruct data (BASE_INSTRUCT_RATIO × candidate pair count)
@@ -326,7 +326,7 @@ def train_lora(
             "best_loss": best_loss,
             "style_consistency": None,
             "domain_accuracy": None,
-            "teacher_model": "grok-3",
+            "teacher_model": "grok-4",
         },
     }
     out = Path(output_dir)
@@ -354,7 +354,7 @@ def train_lora(
             "humaneval_score": None,
             "note": "Run eval suite post-training to populate benchmark scores.",
         },
-        "teacher_model": "grok-3",
+        "teacher_model": "grok-4",
         "created": created_at,
     }
     with open(out / "eval.json", "w") as f:

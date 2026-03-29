@@ -50,7 +50,7 @@ GitHub / Website / Resume
     github.py · website.py · resume.py
          │  candidate profile (skills, repos, bio)
          ▼
-  [ Grok-3 Pair Generation ]   trainer/grok.py
+  [ Grok-4 Pair Generation ]   trainer/grok.py
     70B teacher reads code → generates (instruction, response) pairs
          │  ~18–60 training pairs per candidate
          ▼
@@ -152,7 +152,7 @@ Open [http://localhost:3000](http://localhost:3000).
 3. **Select candidates** — pick one candidate per role slot
 4. **Clone DNA** — click "Clone DNA" to start the pipeline:
    - Collects code from the candidate's top GitHub repos
-   - Calls Grok-3 to generate instruction-response training pairs in their style
+   - Calls Grok-4 to generate instruction-response training pairs in their style
    - Trains a LoRA adapter on the base model
    - Saves the `.dna` block to `dnas/{team_id}/{handle}/`
 5. **Chat with the clone** — open the Build tab and message any cloned candidate; the adapter hot-swaps per candidate

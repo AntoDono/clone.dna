@@ -32,7 +32,7 @@ The .dna file is a new primitive: a portable, benchmarked LoRA adapter that enco
 
 ### 2.1 What a .dna File Actually Is — and What It Isn't
 
-A .dna block is a LoRA adapter trained on a developer's public work. The 70B teacher model reads their actual code and generates the instruction side of each training pair — the problem statement, architectural context, or task description that would naturally produce that code. The developer's code is the completion. This is not synthetic data generation. It is supervised fine-tuning on real, human-written output, with the teacher supplying the missing prompt context that GitHub never recorded.
+A .dna block is a QLoRA adapter trained on a developer's public work. The Grok-4 teacher model (70B-class, via xAI cloud API) reads their actual code and generates the instruction side of each training pair — the problem statement, architectural context, or task description that would naturally produce that code. The developer's code is the completion. This is not synthetic data generation. It is supervised fine-tuning on real, human-written output, with the teacher supplying the missing prompt context that GitHub never recorded.
 
 What this captures empirically: **domain working ability** — how a developer decomposes problems, which architectural patterns they reach for, how they handle edge cases in their domain, what tradeoffs they make under real constraints. A senior distributed systems engineer trained into a .dna block will approach a rate-limiting problem differently than a frontend specialist. That difference is in the weights, not in a system prompt.
 
@@ -42,8 +42,7 @@ What a .dna block does not claim to do: it does not replicate judgment under nov
 
 - **manifest.json** — Candidate handle, expertise domains, base model compatibility hash, version, training sources (GitHub repos, papers), benchmark scores, file size, quantization level
 - **profile.md** — Human-readable candidate profile: what they've built, what domains they operate in, what the block is optimized for. Used by the agent router for expertise selection. Read once by the router, never injected into context
-- **weights/** — Adapter weights in safetensors format (adapter_config.json + adapter_model.safetensors), compatible with vLLM's LoRA loading interface
-- **config.yaml** — Integration config: target layer indices, quantization format (INT4/INT8/FP16), rank, alpha scaling factor, memory footprint estimate
+- **weights/** — Adapter weights in safetensors format (adapter_config.json + adapter_model.safetensors), compatible with PEFT's adapter loading interface and vLLM's `--enable-lora` dynamic loading
 - **eval.json** — Benchmark results: HumanEval, MBPP, domain-specific evals, style consistency metrics. Companies know exactly what they're getting before loading
 - **sources.json** — Full provenance: links to all public repos and contributions used for training. Every .dna block is traceable to its source material
 - **consent.json** — Opt-in record: confirmation that the candidate has authorized their public work for adapter training via the DNA Blocks developer registry (see Section 3)
@@ -53,7 +52,7 @@ What a .dna block does not claim to do: it does not replicate judgment under nov
 - **Portable** — works on any compatible base model (compatibility verified via model hash in manifest). Train once, deploy anywhere
 - **Quantizable** — compress to INT4/INT8 for lightweight deployment. A 50MB fingerprint of a developer's patterns
 - **Versionable** — as a developer ships more public work, their .dna block can be updated. v2.0 reflects a more senior engineer than v1.0
-- **Hot-swappable** — swap expertise at inference time in milliseconds via vLLM's dynamic adapter API. No restart. No redeployment
+- **Hot-swappable** — swap expertise at inference time in milliseconds via PEFT's `load_adapter` / `set_adapter` API (also compatible with vLLM's dynamic adapter loading for production deployment). No restart. No redeployment
 - **Composable** — load different .dna blocks for different phases of a project: system design, implementation, testing, documentation
 
 ### 2.2 The AI Headhunter: How It Works
@@ -66,29 +65,32 @@ The agent takes a project description or role requirement and searches GitHub se
 **Stage 2 — Profile Building**
 For each candidate, the agent builds a structured profile: languages, frameworks, coding patterns, documentation style, problem decomposition approach, domain expertise. This becomes the profile.md in the .dna file and the basis for registry search.
 
-**Stage 3 — .dna Block Minting (on DGX Spark)**
-The 70B teacher model on the DGX reads the candidate's public work and generates the instruction side of each training pair — the problem statement, architectural context, or task description that would naturally produce that code. The developer's actual code is the completion. The student adapter is trained on these pairs. The result is a .dna block that applies their problem-solving patterns to new tasks in their domain.
+**Stage 3 — .dna Block Minting**
+The Grok-4 teacher model (70B-class, via xAI cloud API) reads the candidate's public work and generates the instruction side of each training pair — the problem statement, architectural context, or task description that would naturally produce that code. The developer's actual code is the completion. The student QLoRA adapter is trained on these pairs using PEFT on the base model. The result is a .dna block that applies their problem-solving patterns to new tasks in their domain.
 
 **Stage 4 — Project Evaluation**
 The user describes their project or pastes their actual codebase context. The agent loads the relevant .dna blocks and generates contributions in each expert's style — giving the hiring team a concrete, task-specific sample before any interview is scheduled.
 
-### 2.3 Runtime Layer: Built on vLLM
+### 2.3 Runtime Layer: PEFT + HuggingFace Transformers
 
-The DNA Blocks runtime is built on top of vLLM's production multi-LoRA serving infrastructure. We are not writing custom weight-injection hooks. vLLM already provides:
+The DNA Blocks runtime is built on HuggingFace Transformers and PEFT (Parameter-Efficient Fine-Tuning). The base model is loaded once into VRAM at server startup and shared across all inference requests; QLoRA adapters are hot-swapped per-request via PEFT's native adapter API. The core runtime provides:
 
-- Dynamic adapter loading and unloading via REST API
-- Per-request adapter selection — each inference call specifies which adapter to use via the model parameter, enabling true per-request expertise routing
-- LRU caching — frequently used DNA blocks stay in GPU memory automatically
-- OpenAI-compatible API — any application already calling OpenAI can use DNA Blocks as a drop-in replacement
-- Efficient VRAM management — memory allocation, KV-cache management, and concurrent adapter serving handled natively
+- Single base model loaded once into VRAM — reused across all requests, no redundant copies
+- Per-request adapter hot-swap via PEFT's `load_adapter` / `set_adapter` — each chat request specifies which .dna adapter to activate, enabling true per-request expertise routing
+- Reference-counted model eviction — when training jobs need GPU memory, the inference model is evicted via a `model_evicted()` context manager with reference counting. The first training job evicts the model; intermediate jobs proceed directly; the last job out reloads it automatically. This allows N concurrent training runs without premature reload
+- Token streaming via `TextIteratorStreamer` — responses are streamed token-by-token over SSE to the frontend
+- Adapter isolation — GPTQ-quantized models don't support multiple concurrent LoRA adapters, so the runtime keeps exactly one adapter resident at a time, evicting the previous adapter before loading a new one
 
-**What DNA Blocks adds on top of vLLM:**
+Adapter weights are exported in standard PEFT safetensors format, which is directly compatible with vLLM's `--enable-lora` dynamic loading interface for production-scale deployment.
 
-- The .dna packaging format — standardized, self-describing expertise packages with manifest, candidate profile, benchmarks, consent record, and source provenance. vLLM expects loose adapter files; DNA Blocks wraps them into a structured, auditable artifact
+**What DNA Blocks adds on top of the runtime:**
+
+- The .dna packaging format — standardized, self-describing expertise packages with manifest, candidate profile, benchmarks, consent record, and source provenance. PEFT expects loose adapter files; DNA Blocks wraps them into a structured, auditable artifact
 - The Talent Registry — a searchable marketplace where .dna files are published, discovered, and loaded. Browse by skill, domain, coding style, benchmark score
 - The AI Headhunter agent — discovers candidates, evaluates their public work, and mints .dna blocks autonomously
-- Agent-native project routing — an LLM tool schema that lets the project agent autonomously select which .dna to load for each task
-- The training pipeline — automated public-work collection, synthetic data generation, training, quantization, packaging, and registry publishing on DGX Spark
+- The tool-use agent loop — clones can emit structured tool calls (`read_file`, `write_file`, `run_command`) executed in a sandboxed workspace, enabling the clone to actually write and run code
+- PM orchestration — a PM persona decomposes tasks, Grok assigns sub-tasks to the right role slots, and each specialist (with its own adapter loaded) responds in sequence
+- The training pipeline — automated public-work collection, Grok-4 pair generation with caching, QLoRA training, packaging, and registry publishing
 
 **On "zero context tokens consumed":** This refers specifically to the expertise signal itself. In a traditional RAG or few-shot prompting approach, you would inject code examples, style guides, or candidate summaries into the context window to influence output — consuming hundreds to thousands of tokens per request. With a loaded .dna adapter, the style and pattern signal lives in the weights, not the context. The task, codebase snippets, and instructions still consume context normally. The expertise layer is free.
 
@@ -96,20 +98,20 @@ The DNA Blocks runtime is built on top of vLLM's production multi-LoRA serving i
 
 1. **Project Analysis** — the agent analyzes the incoming task, extracts requirements, identifies what expertise domain is needed
 2. **Expertise Selection** — the agent calls the select_expert tool, which queries the registry and matches requirements to available .dna files using profiles and eval scores
-3. **Dynamic Loading** — the runtime calls vLLM's load_lora_adapter endpoint with the selected .dna adapter path
-4. **Inference** — the request is sent to vLLM routing to the loaded adapter. Context window is fully available for the actual task
-5. **Swap** — for the next task phase, a different .dna is loaded. Clean handoff, no weight collision
+3. **Dynamic Loading** — the runtime calls PEFT's `load_adapter` with the selected .dna adapter path, evicting any previously loaded adapter first
+4. **Inference** — the request is generated with the loaded adapter active via `set_adapter`. Context window is fully available for the actual task. Tokens stream via `TextIteratorStreamer` over SSE
+5. **Swap** — for the next task phase, a different .dna adapter is loaded. The previous adapter is evicted, the new one is loaded. Clean handoff, no weight collision
 
-### 2.5 Training Pipeline (on DGX Spark)
+### 2.5 Training Pipeline
 
-The DGX Spark is the mint — the .dna factory.
+The training pipeline mints .dna blocks from a candidate's public work.
 
 **Pipeline stages:**
 
-- **Input:** Candidate's public GitHub repos, PRs, code reviews, technical blog posts (MIT/Apache-licensed only, consent-verified)
-- **Teacher model (70B+ on DGX):** Reads the candidate's work and generates synthetic instruction-response pairs capturing their coding style, domain vocabulary, and pattern heuristics. Requires 128GB unified memory — physically cannot run on consumer hardware or standard cloud instances. The DGX Spark is not a nice-to-have; it is the minimum viable hardware for this step
-- **Student adapter training:** Freeze base model, train LoRA adapter on synthetic data using PEFT + TRL with FlashAttention-2 and BF16
-- **Output:** Quantized, benchmarked, packaged .dna block published to registry
+- **Input:** Candidate's public GitHub repos (MIT/Apache-licensed only), collected via the GitHub API with authenticated tokens for rate limit headroom. Source files are downloaded up to a configurable token budget per candidate
+- **Teacher model (Grok-4 via xAI API):** Reads the candidate's code and generates synthetic instruction-response pairs capturing their coding style, domain vocabulary, and pattern heuristics. Results are cached to `GROK_CACHE_DIR` so reruns skip the API call. Typically generates 18–60 pairs per candidate
+- **Student adapter training (QLoRA via PEFT):** Freeze base model, train a QLoRA adapter on the generated pairs mixed with alpaca-cleaned base instruct data (50% ratio to prevent catastrophic forgetting) and tool-use examples (to preserve the model's tool-call formatting). When `QUANTIZATION_BITS` is set, the base model is GPTQ-quantized and `prepare_model_for_kbit_training` is applied for full QLoRA with `paged_adamw_8bit`
+- **Output:** Packaged .dna block (adapter weights + manifest, eval, sources, consent, profile) saved to `dnas/{team_id}/{handle}/` and published to the registry
 
 **Synthetic data quality — the highest-variance step in the pipeline:**
 
@@ -121,69 +123,43 @@ The teacher model's instruction-side prompt templates are the single most import
 - **Reproducibility:** Every block ships with its exact teacher prompt template in the training config.json. Not just the LoRA hyperparameters — the full prompt design, so the quality of the instruction generation step is auditable and improvable over time.
 
 **Training hyperparameters (fully reproducible):**
-LoRA rank=64, alpha=128, dropout=0.05, target modules: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj. Optimizer: AdamW (lr=1e-4, weight_decay=0.01, betas=(0.9, 0.999)). Batch size=8, 2 epochs, warmup ratio=0.03, max sequence length=4096. Every .dna block ships with its exact training config.json for full reproducibility.
+LoRA rank=32, alpha=128, dropout=0.05, target modules: q_proj, k_proj, v_proj, o_proj. Optimizer: AdamW (lr=2e-4) or paged_adamw_8bit when QLoRA is active. Per-device batch size=2, gradient accumulation steps=4 (effective batch size=8), 2 epochs, max sequence length=2048. Mixed training data: candidate pairs + alpaca-cleaned (50% ratio) + tool-use examples. Every .dna block ships with its exact training config in manifest.json and eval.json for full reproducibility.
 
 ### 2.6 API Design
 
+**Loading a .dna block with PEFT (standalone usage):**
+
 ```python
-from dnablocks import Runtime, Registry, Headhunter
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
-# Starts vLLM server with --enable-lora
-runtime = Runtime(base_model="mistral-7b-instruct")
-
-# AI Headhunter: find and mint a candidate
-hunter = Headhunter(runtime=runtime, dgx=True)
-
-candidates = hunter.search(
-    role="senior backend engineer",
-    skills=["Python", "distributed systems", "API design"],
-    sources=["github"]
+base = AutoModelForCausalLM.from_pretrained(
+    "Qwen/Qwen2.5-0.5B-Instruct", device_map="auto"
 )
-
-hunter.mint(
-    candidate=candidates[0],
-    repos=["github.com/user/project1", "github.com/user/project2"],
-    output="backend-expert.dna"
-)
-
-runtime.load("backend-expert.dna")
-
-response = runtime.generate(
-    "Design a rate-limiting middleware for a FastAPI application",
-    expert="backend-expert"
-)
-
-runtime.load("frontend-specialist.dna")
-response = runtime.generate(
-    "Build a React dashboard for monitoring the rate limiter",
-    expert="frontend-specialist"
-)
-
-registry = Registry(url="https://registry.dnablocks.dev")
-results = registry.search("machine learning engineer", quant="INT4")
-registry.download("ml-researcher-v2.dna", dest="./team/")
-registry.publish("my-expert.dna", tags=["backend", "python", "distributed"])
+model = PeftModel.from_pretrained(base, "dnas/1/torvalds")
+tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
 ```
 
+**REST API (FastAPI backend):**
+
 ```python
-from dnablocks import ProjectAgent
+# POST /teams/{id}/build/chat — single-candidate chat with adapter hot-swap
+# POST /teams/{id}/build/orchestrate — PM plans → Grok assigns → specialists respond
+# GET  /teams/{id}/build/messages — full message history
 
-agent = ProjectAgent(
-    base_model="mistral-7b-instruct",
-    team_dir="./team/",
-    registry=Registry()
-)
+# GET  /registry — list all minted .dna blocks
+# GET  /registry/search?skills=python&domain=backend — filter blocks
+# GET  /registry/{team_id}/{handle} — full block detail
+# GET  /registry/{team_id}/{handle}/download — download .dna as zip
+```
 
-agent.build("""
-    Build a real-time chat application with WebSocket support,
-    React frontend, and Redis-backed message queue
-""")
+**PM Orchestration flow (multi-expert project assembly):**
 
-# Agent flow:
-# 1. Load architect.dna — system design
-# 2. Load backend-expert.dna — API + WebSocket implementation
-# 3. Load frontend-specialist.dna — React UI
-# 4. Load devops-engineer.dna — deployment config
+```python
+# 1. PM persona (base model, no adapter) decomposes user prompt into task plan
+# 2. Grok reads the plan and assigns each sub-task to the best role slot
+# 3. Each specialist's QLoRA adapter is hot-swapped and generates its response
+# 4. Responses stream back over SSE in sequence
 ```
 
 ### 2.7 Data Model
@@ -202,28 +178,25 @@ agent.build("""
         ],
         "expertise_domains": ["backend", "distributed-systems", "API-design", "Python", "Rust"],
         "total_contributions_analyzed": 47823,
-        "years_active": 6,
-        "consent_verified": true,
-        "consent_timestamp": "2026-03-01T09:00:00Z"
+        "consent_verified": false
     },
-    "base_model_hash": "mistral-7b-instruct-v0.3-sha256:a1b2c3...",
-    "rank": 64,
+    "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "rank": 32,
     "alpha": 128,
-    "quantization": "INT8",
-    "file_size_mb": 47,
-    "memory_overhead_mb": 94,
-    "context_tokens_consumed_by_expertise_layer": 0,
+    "quantization": "FP16",
+    "training_pairs": 45,
+    "candidate_pairs": 22,
+    "base_instruct_pairs": 11,
+    "num_epochs": 2,
     "vllm_compatible": true,
     "tags": ["backend", "python", "distributed-systems", "API-design"],
-    "license": "MIT",
     "created": "2026-03-28T14:00:00Z",
     "eval_summary": {
-        "humaneval_score": 0.91,
-        "style_consistency": 0.87,
-        "domain_accuracy": 0.93,
-        "latency_overhead_ms": 12,
-        "teacher_model": "llama-3-70b",
-        "teacher_prompt_template_version": "v2.1"
+        "final_loss": 1.2345,
+        "best_loss": 1.0987,
+        "style_consistency": null,
+        "domain_accuracy": null,
+        "teacher_model": "Grok-4"
     }
 }
 ```
@@ -276,15 +249,13 @@ This team has shipped production-grade ML and hardware systems in under 24 hours
 
 ### Hybrid Execution Strategy
 
-Heavy training and minting of demo .dna blocks runs on the DGX Spark (70B teacher + adapter training). Runtime, Headhunter agent, Project Assembly, and Registry run locally or on a lightweight instance using pre-exported .dna files and vLLM. This guarantees zero DGX contention risk during final demo polish.
+Pair generation uses the Grok-4 cloud API (70B-class teacher); adapter training and inference run on local GPU via HuggingFace Transformers + PEFT. Grok API results are cached to `GROK_CACHE_DIR`, so reruns skip the API call entirely. Runtime, Headhunter agent, PM Orchestration, and Registry all run locally using pre-exported .dna files.
 
 **Pre-hackathon validation checklist (completed during warm-up window):**
-- All three demo .dna blocks minted, exported, and benchmark-verified
-- Blocks loaded into the actual demo environment (not just the training environment) and confirmed to serve correctly via vLLM's dynamic adapter API
+- Demo .dna blocks minted, exported, and verified loadable
+- Blocks loaded into the actual demo environment and confirmed to serve correctly via PEFT's adapter hot-swap
 - End-to-end inference tested on demo hardware: adapter loads, generates output, swaps cleanly — before the clock starts
-- Teacher prompt templates validated via spot-check (20–30 sample pairs per candidate, style consistency ≥ 0.85)
-
-The distinction between "minted" and "loadable in the demo environment" matters. A block that trains successfully but fails to load under vLLM on demo hardware is a dead block. Both conditions are verified during the warm-up window.
+- Grok-4 pair generation tested and cached for demo candidates
 
 ### Build Plan
 
@@ -297,22 +268,20 @@ The distinction between "minted" and "loadable in the demo environment" matters.
 
 **Phase 1 — Foundation (Hours 0–4)**
 
-- DGX: vLLM + Mistral-7B + LoRA enabled (Youwei) — deliverable: vLLM serving with dynamic adapter loading
-- DGX: Load Llama-3-70B teacher in INT8 (~70GB) (Youwei) — deliverable: 70B model running for synthetic data generation
-- .dna format spec + dnablocks pack CLI (Sean) — deliverable: packaging tool
+- HuggingFace Transformers + PEFT + configurable base model (Youwei) — deliverable: inference serving with PEFT adapter hot-swap
+- Configure Grok-4 API for pair generation + caching (Youwei) — deliverable: teacher pipeline generating instruction-response pairs
+- .dna format spec + packaging module (Sean) — deliverable: .dna block structure with manifest, eval, sources, consent, profile
 - Headhunter agent: GitHub scraper + candidate profiler (Heewon) — deliverable: agent that can analyze a GitHub user's repos and build a profile
 
 **Phase 2 — DNA Factory (Hours 4–9)**
 
-- 70B teacher generates synthetic datasets from 3 real GitHub users' code (Youwei) — deliverable: 3 training datasets
-- Train backend-expert.dna rank 64, ~1.5hr (Sean) — deliverable: exported, benchmarked .dna
-- Train ml-researcher.dna rank 64, ~1.5hr (Youwei) — deliverable: exported, benchmarked .dna
-- Train fullstack-dev.dna rank 32, ~1hr (Sean) — deliverable: exported, benchmarked .dna
+- Grok-4 generates training pair datasets from real GitHub users' code (Youwei) — deliverable: cached training datasets
+- Train .dna blocks rank 32 via QLoRA (Sean + Youwei) — deliverable: exported, packaged .dna blocks
 - Talent Registry backend: FastAPI + SQLite (Heewon) — deliverable: working browse, search, and download API
 
 **Phase 3 — Headhunter Agent + Project Assembly (Hours 10–18)**
 
-- dnablocks Python wrapper: vLLM API + .dna unpacking (Sean) — deliverable: installable package
+- PEFT runtime wrapper: adapter hot-swap + .dna unpacking (Sean) — deliverable: inference module with SSE streaming
 - AI Headhunter agent: search → evaluate → recommend (Heewon) — deliverable: agent that finds candidates autonomously
 - Project Agent: receives task, selects experts, swaps .dna blocks (Youwei) — deliverable: agent building projects with expert blocks
 - Multi-step demo: agent assembles team, builds project (Youwei + Sean) — deliverable: end-to-end demo
@@ -322,7 +291,7 @@ The distinction between "minted" and "loadable in the demo environment" matters.
 **Hour 8 Scope Gate — Explicit Cut Decision**
 
 At Hour 8, the team makes an explicit go/no-go on scope. If the training pipeline, runtime wrapper, and Headhunter agent core are not all green by Hour 8, the following are cut or simplified in this order:
-1. **Registry frontend** → replaced with a CLI-accessible registry demo (the backend API still runs; the UI is cosmetic for the demo)
+1. **Registry frontend** → replaced with an API-accessible registry demo (the backend API still runs; the UI is cosmetic for the demo)
 2. **Project Agent multi-step routing** → replaced with a manual two-block swap demo showing the same hot-swap behavior more simply
 
 This decision is made at Hour 8, not Hour 20. Deciding at Hour 20 means both paths fail. Deciding at Hour 8 means one path succeeds cleanly.
@@ -344,7 +313,7 @@ This decision is made at Hour 8, not Hour 20. Deciding at Hour 20 means both pat
 
 3. **"Minting DNA"** — the .dna block trains live on DGX using their actual code (or the pre-minted block if time is tight — pre-minted fallback is always ready)
 
-4. **"Loading the fingerprint"** — load the .dna block into vLLM, ask a domain-specific technical question, show it responds in the candidate's register with their architectural vocabulary
+4. **"Loading the fingerprint"** — load the .dna block via PEFT adapter hot-swap, ask a domain-specific technical question, show it responds in the candidate's register with their architectural vocabulary
 
 5. **"Building with DNA"** — the Project Agent receives a task, selects the right .dna blocks, swaps between experts, builds the project phase by phase
 
@@ -354,9 +323,9 @@ This decision is made at Hour 8, not Hour 20. Deciding at Hour 20 means both pat
 
 ### Milestones
 
-- Hour 4: vLLM serving on DGX, 70B teacher loaded, format spec done, GitHub scraper working
+- Hour 4: PEFT inference serving ready, Grok-4 pair generation pipeline working, format spec done, GitHub scraper working
 - Hour 8: **Scope gate** — explicit cut decision on registry frontend and Project Agent complexity
-- Hour 10: 3 DNA blocks trained and exported, registry live with API, headhunter finding candidates, PMF outreach to other teams underway
+- Hour 10: DNA blocks trained and exported, registry live with API, headhunter finding candidates, PMF outreach to other teams underway
 - Hour 16: Project agent routing working (or simplified swap demo), other teams onboarded and building
 - Hour 24: Polished demo, benchmarks ready, presentation-ready, PMF count confirmed
 
@@ -366,8 +335,8 @@ This decision is made at Hour 8, not Hour 20. Deciding at Hour 20 means both pat
 
 ### Inference Scaling
 
-- vLLM's built-in LRU adapter caching — hot experts stay in GPU memory, never touch disk
-- Per-request routing — vLLM supports simultaneous different-adapter requests, so multiple users load different experts at the same time
+- PEFT adapter hot-swap — the base model loads once into VRAM; adapters are swapped per-request in milliseconds. For production scale-out, adapter weights are exported in standard PEFT safetensors format compatible with vLLM's `--enable-lora` dynamic loading interface
+- Reference-counted VRAM management — the runtime's `model_evicted()` context manager cleanly coordinates inference and training on shared GPU hardware, allowing concurrent training jobs without premature model reload
 - Context efficiency — expertise signal lives in weights, not context, so the full context window is available for actual task depth
 
 ### Registry Scaling
@@ -379,7 +348,7 @@ This decision is made at Hour 8, not Hour 20. Deciding at Hour 20 means both pat
 
 ### Horizontal Scaling Path
 
-Multiple vLLM instances behind a load balancer with shared Redis-backed adapter cache. Each instance maintains its own LRU pool; the Redis layer synchronizes which adapters are hot across the fleet.
+For production deployment: multiple vLLM instances (using the exported PEFT-compatible adapter weights with `--enable-lora`) behind a load balancer with shared Redis-backed adapter cache. Each instance maintains its own LRU pool; the Redis layer synchronizes which adapters are hot across the fleet. The current PEFT-based runtime serves as the development and hackathon demo layer; vLLM is the production scale-out path.
 
 ### The Flywheel
 
@@ -393,15 +362,15 @@ Multiple vLLM instances behind a load balancer with shared Redis-backed adapter 
 
 ### Interoperability
 
-- **Base model agnostic** — .dna works across any model family supported by vLLM's LoRA interface: Llama, Mistral, Qwen, Phi, Gemma, and others
-- **Framework agnostic** — .dna is an open spec. The reference runtime uses vLLM, but any inference engine with LoRA adapter support can load the weights
-- **OpenAI-compatible API** — vLLM already serves an OpenAI-compatible endpoint. DNA Blocks is a drop-in replacement for any application already calling OpenAI
+- **Base model agnostic** — .dna works across any HuggingFace-compatible model family: Llama, Mistral, Qwen, Phi, Gemma, and others. Default: Qwen/Qwen2.5-0.5B-Instruct, configurable via `BASE_MODEL` environment variable
+- **Framework agnostic** — .dna is an open spec. The reference runtime uses PEFT + HuggingFace Transformers; adapter weights are also compatible with vLLM's `--enable-lora` for production serving
+- **Standard adapter format** — adapter weights are standard PEFT safetensors. Any tool that loads PEFT adapters can use a .dna block directly
 
 ### API Design
 
-- **REST registry** — GET /experts?domain=backend&skills=python, POST /experts, GET /experts/{id}/download
-- **CLI** — dnablocks search, dnablocks mint, dnablocks load, dnablocks push
-- **LLM Tool Schema** — registry and headhunter exposed as standard tool-use functions. Any LLM with tool-use can autonomously discover, mint, and load expertise
+- **REST registry** — GET /registry, GET /registry/search?skills=python&domain=backend, GET /registry/{team_id}/{handle}, GET /registry/{team_id}/{handle}/download
+- **REST build API** — POST /teams/{id}/build/chat (SSE), POST /teams/{id}/build/orchestrate (SSE), GET /teams/{id}/build/messages
+- **LLM Tool Schema** — registry and headhunter exposed as standard tool-use functions. Clones can emit structured tool calls (`read_file`, `write_file`, `run_command`) executed in a sandboxed workspace
 
 ### Extensibility
 
@@ -439,14 +408,15 @@ This is the section most products in this space skip. We don't.
 
 ### The Consent Architecture
 
-DNA Blocks operates on an **opt-in model**. Developers register at registry.dnablocks.dev and explicitly authorize their public repositories for adapter training. This is not a legal technicality — it is the product's trust foundation.
+DNA Blocks operates on an **opt-in model**. Every .dna block ships with a mandatory `consent.json` (opt-in record with consent status, public-repos-only flag, and revocability) and `sources.json` (full repo provenance). Blocks are minted only from MIT/Apache-2.0 licensed public repositories. The developer enrollment portal (registry.dnablocks.dev) is the v2 roadmap target for full self-service opt-in; the current implementation enforces consent metadata at the format level.
 
-The developer registry provides:
+The consent architecture provides:
 
-- **Opt-in authorization** — no .dna block is minted without the developer's explicit consent
-- **Revocation rights** — developers can revoke their block at any time, triggering removal from the registry and a flag to any organizations currently using it
+- **Consent metadata in every block** — `consent.json` and `sources.json` are mandatory fields in the .dna spec. Every hiring team knows exactly whose work trained the adapter and the consent status
+- **Public-repos-only filter** — only MIT/Apache-2.0 licensed repositories are used for training, filtered at ingestion
+- **Revocability flag** — every `consent.json` marks the block as revocable; the registry API supports block removal
 - **Version control ownership** — developers decide when their block is updated as they ship new work
-- **Attribution in every block** — sources.json and consent.json are mandatory fields in the .dna spec. Every hiring team knows exactly whose work trained the adapter
+- **Attribution in every block** — `sources.json` lists every repo URL, language, stars, and topics used for training
 
 ### The Licensing Question
 
@@ -503,35 +473,27 @@ The Docker analogy is precise: Docker didn't invent containers. It made them usa
 
 We are the same crew that has won 10+ major hackathons in the last 12 months under identical time pressure.
 
-**Youwei (APMA & CS @ Brown, ML Engineer @ Refine.Dev):** 1st HackMIT Cerebras track, 4x HackPrinceton including YC Runner-Up, 1st Emergent AI, 2nd Cornell BigRedHacks. Repeatedly ships 70B-scale inference pipelines and real-time ML systems in under 24 hours. Owns all DGX Spark training, 70B teacher loading, synthetic data generation, and adapter minting — exactly the pipeline he shipped at HackMIT on Cerebras wafer-scale hardware.
+**Youwei (APMA & CS @ Brown, ML Engineer @ Refine.Dev):** 1st HackMIT Cerebras track, 4x HackPrinceton including YC Runner-Up, 1st Emergent AI, 2nd Cornell BigRedHacks. Repeatedly ships 70B-scale inference pipelines and real-time ML systems in under 24 hours. Owns all training pipeline, Grok-4 pair generation, synthetic data generation, and adapter minting — exactly the pipeline he shipped at HackMIT on Cerebras wafer-scale hardware.
 
-**Sean (ACSL Top 20, USACO Silver):** Owns .dna format spec, packaging CLI, vLLM runtime wrapper, and registry backend. Systems-level thinking applied to the packaging and serving layer.
+**Sean (ACSL Top 20, USACO Silver):** Owns .dna format spec, PEFT runtime wrapper, and registry backend. Systems-level thinking applied to the packaging and serving layer.
 
 **Heewon (Applied Math-CS @ Brown, Hack@Brown Co-Director):** Full-stack ML and robotics systems shipped under real pressure. Owns Headhunter agent, Project Agent, and registry frontend.
 
 **Kaden:** Hardware-aware engineering. Stabilized DGX-scale pipelines in prior wins. Owns DGX stability, benchmarking, and final polish.
 
-### Division of Work
-
-- Youwei → all DGX Spark training, 70B teacher, synthetic data, adapter minting
-- Sean → .dna format, packaging CLI, vLLM runtime wrapper, registry backend
-- Heewon → Headhunter agent, Project Agent, registry frontend
-- Kaden → DGX stability, benchmarking, final demo polish
-- All → PMF outreach to other teams (begins Hour 10), demo video, pitch
-
 ### Critical Path
 
-Youwei's DGX setup in Hours 0–4 is the single blocking dependency for the entire training pipeline that Sean and Heewon's work ultimately serves. If DGX memory pressure appears in Hours 0–4, Kaden is the immediate escalation — not an end-of-hackathon problem. Fallback: pre-minted blocks loaded from the warm-up window carry the demo if the live training pipeline hits issues.
+Youwei's Grok-4 API setup and base model loading in Hours 0–4 is the single blocking dependency for the entire training pipeline that Sean and Heewon's work ultimately serves. If GPU memory pressure appears during QLoRA training, Kaden is the immediate escalation — not an end-of-hackathon problem. Fallback: pre-minted blocks with cached Grok pairs carry the demo if the live training pipeline hits issues.
 
 ---
 
 ## 11. Risk Assessment
 
-**DGX setup and 70B teacher memory pressure**
-Mitigation: vLLM + INT8 quantization fits within 128GB unified memory. Team has run equivalent 70B-scale inference on Cerebras wafer-scale engines at HackMIT. All three demo .dna blocks pre-minted AND verified loadable in the demo environment during warm-up window. "Minted" and "loadable in the demo environment" are treated as separate conditions — both verified before clock starts.
+**Grok-4 API availability and rate limits**
+Mitigation: Grok-4 pair generation results are cached to `GROK_CACHE_DIR`. Once pairs are generated for a candidate, reruns skip the API call entirely. Demo candidates are pre-cached during warm-up. All demo .dna blocks pre-minted AND verified loadable in the demo environment during warm-up window.
 
-**Synthetic data quality from the 70B teacher**
-This is the highest-variance step in the pipeline and receives explicit treatment. Teacher prompt templates are domain-conditioned (not generic), spot-checked via 20–30 sample pairs per candidate before training runs, and validated against a 0.85+ style consistency threshold on held-out code. If a block scores below 0.80, the template is revised and the block is retrained before it touches the registry. Every block ships with its exact teacher prompt template version in training config.json for full auditability.
+**Synthetic data quality from the Grok-4 teacher**
+This is the highest-variance step in the pipeline and receives explicit treatment. Teacher prompt templates are domain-conditioned (not generic), spot-checked via sample pairs per candidate before training runs. Every block ships with its teacher model identifier (`Grok-4`) in eval.json for full auditability.
 
 **.dna blocks do not adequately capture style**
 Mitigation: We benchmark style consistency explicitly (target: 0.85+ on held-out code from the same developer). The demo includes a quantitative side-by-side. If the delta is smaller than expected, we show it honestly and frame it as v1 — the improvement curve is the pitch, not perfection at launch.
@@ -549,7 +511,7 @@ Mitigation: Consent-first architecture is a hard technical requirement, not a po
 Mitigation: Explicit scope gate at Hour 8. Registry frontend and Project Agent multi-step routing are identified as the first cuts. Decision made at Hour 8, not Hour 20. Two clear fallback demo paths defined before the clock starts so the team never debates scope under pressure.
 
 **Sequential hot-swapping instability**
-Mitigation: vLLM dynamic adapter API is production-tested at scale. Team has shipped similar multi-model routing in prior wins.
+Mitigation: PEFT's adapter loading/unloading is well-tested. The runtime evicts the previous adapter before loading a new one, preventing weight collision. GPTQ-quantized models are handled explicitly — only one adapter is kept resident at a time to avoid the random re-initialization issue on multi-adapter GPTQ models. Team has shipped similar multi-model routing in prior wins.
 
 **Other teams don't adopt the API**
 Mitigation: Demo is 100% self-sufficient. PMF outreach begins at Hour 10 with a concrete offer: mint a .dna block from a GitHub user of their choice in 30 minutes. Pure upside — but pursued aggressively because walking on stage with real adoption is the strongest possible opening.
@@ -560,7 +522,7 @@ Mitigation: Demo is 100% self-sufficient. PMF outreach begins at Hour 10 with a 
 
 ### Why This Isn't "Just LoRA With a GitHub Scraper"
 
-LoRA existed. vLLM existed. GitHub existed. The insight is not technical. It is product — and the moat is three layers deep.
+LoRA existed. PEFT existed. GitHub existed. The insight is not technical. It is product — and the moat is three layers deep.
 
 **Layer 1: Registry liquidity is the flywheel, and it cannot be cold-started.**
 
@@ -572,7 +534,7 @@ Any competitor minting LoRA adapters from public code without an explicit consen
 
 **Layer 3: The compute requirement is a quality gate, not a cost barrier.**
 
-DGX-class hardware is rentable. That's a feature, not a limitation — it means minting scales globally without owned infrastructure. The moat is not hardware access. It is what the hardware requirement filters out. Producing a .dna block worth putting in a hiring registry — one a company will trust to evaluate a $150K hiring decision — requires a 70B teacher pipeline with iterated, domain-conditioned prompt templates, tuned training configs, and calibrated domain benchmarks. That pipeline takes real investment to build and improve. A competitor can fork the format spec in a weekend. They cannot fork the accumulated minting quality. Every block we train improves our benchmark calibration and teacher prompt design. By the time a fast-follower ships v1, we are on v3 of the pipeline — and the quality delta is visible in the eval scores on every block in the registry. That quality floor is what makes the registry trustworthy as a hiring signal. A flooded registry of low-quality blocks is worthless. A curated registry where every block has a verifiable quality floor is the product. The compute requirement enforces that floor.
+A 70B-class teacher API (Grok-4) is required for high-quality pair generation. That's a feature, not a limitation — it means minting scales globally without owned infrastructure. The moat is not API access. It is what the quality requirement filters out. Producing a .dna block worth putting in a hiring registry — one a company will trust to evaluate a $150K hiring decision — requires a 70B-class teacher pipeline with iterated, domain-conditioned prompt templates, tuned training configs, and calibrated domain benchmarks. That pipeline takes real investment to build and improve. A competitor can fork the format spec in a weekend. They cannot fork the accumulated minting quality. Every block we train improves our benchmark calibration and teacher prompt design. By the time a fast-follower ships v1, we are on v3 of the pipeline — and the quality delta is visible in the eval scores on every block in the registry. That quality floor is what makes the registry trustworthy as a hiring signal. A flooded registry of low-quality blocks is worthless. A curated registry where every block has a verifiable quality floor is the product. The compute requirement enforces that floor.
 
 The Docker analogy holds precisely because of this structure: Docker didn't win on the spec. It won on Hub liquidity, tooling ecosystem, and enterprise trust — built over time, in that order. DNA Blocks is running the same playbook: open format, proprietary registry, consent moat, compute quality gate.
 

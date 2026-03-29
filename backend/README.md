@@ -55,7 +55,7 @@ backend/
 │   └── schema.py            # Shared CandidateProfile dataclass
 │
 ├── trainer/                 # .dna minting pipeline
-│   ├── grok.py              # Grok-3 client: generates (instruction, response) training pairs
+│   ├── grok.py              # Grok-4 client: generates (instruction, response) training pairs
 │   ├── github.py            # Repo downloader used during training (separate from extractor)
 │   ├── training.py          # PEFT LoRA training loop, manifest/eval/sources/consent writes
 │   ├── model_utils.py       # Model loading, quantization, VRAM estimation helpers
@@ -124,7 +124,7 @@ The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in seq
 
 1. **Repo collection** (`trainer/github.py`) — fetches the candidate's top public repos, filters by language and license, downloads source files up to a configurable token budget.
 
-2. **Pair generation** (`trainer/grok.py`) — sends code chunks to Grok-3 (70B teacher). The teacher reads the developer's actual code and generates the *instruction* side of each pair (the problem statement, architectural context, or task description that would naturally produce that code). The developer's code is the *completion*. Results are cached to `GROK_CACHE_DIR` so reruns skip the API call. Typically generates 18–60 pairs per candidate.
+2. **Pair generation** (`trainer/grok.py`) — sends code chunks to 4 (70B teacher). The teacher reads the developer's actual code and generates the *instruction* side of each pair (the problem statement, architectural context, or task description that would naturally produce that code). The developer's code is the *completion*. Results are cached to `GROK_CACHE_DIR` so reruns skip the API call. Typically generates 18–60 pairs per candidate.
 
 3. **LoRA training** (`trainer/training.py`) — freezes the base model and trains a LoRA adapter (rank 64, alpha 128) using PEFT + HuggingFace `Trainer`. Training pairs are mixed with Alpaca-cleaned examples and tool-use demonstrations to preserve general capability.
 

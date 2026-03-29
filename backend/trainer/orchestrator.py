@@ -20,7 +20,7 @@ def assign_tasks(
     fallback_prompt: str,
 ) -> list[dict]:
     """
-    Call Grok-3-mini to derive one task assignment per specialist from the PM's plan.
+    Call Grok-4 to derive one task assignment per specialist from the PM's plan.
 
     Args:
         pm_response: The full text response from the PM/lead agent.
@@ -42,7 +42,7 @@ def assign_tasks(
         from openai import OpenAI as _OpenAI
         grok = _OpenAI(api_key=os.getenv("XAI_API_KEY", ""), base_url="https://api.x.ai/v1")
         resp = grok.chat.completions.create(
-            model="grok-3-mini",
+            model="grok-4.20-0309-reasoning",
             messages=[{
                 "role": "user",
                 "content": (
