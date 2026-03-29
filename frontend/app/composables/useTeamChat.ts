@@ -79,6 +79,17 @@ export function useTeamChat(teamId: number, apiBase: string) {
   const streaming = ref(false)
   const streamingHandle = ref<string | null>(null)
   const isThinking = ref(false)
+  let abortController: AbortController | null = null
+
+  function stopStreaming() {
+    if (abortController) {
+      abortController.abort()
+      abortController = null
+    }
+    isThinking.value = false
+    streaming.value = false
+    streamingHandle.value = null
+  }
 
   async function sendMessage() {
     if (!inputText.value.trim() || streaming.value || !activeThread.value) return
@@ -99,17 +110,30 @@ export function useTeamChat(teamId: number, apiBase: string) {
     streaming.value = true
     streamingHandle.value = key
     isThinking.value = false
+    abortController = new AbortController()
 
     pushMessage(key, {
       id: Date.now(), thread: key, sender: 'user',
       content: message, created_at: new Date().toISOString(),
     })
 
-    const response = await fetch(`${apiBase}/teams/${teamId}/build/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ handle: key, message }),
-    })
+    let response: Response
+    try {
+      response = await fetch(`${apiBase}/teams/${teamId}/build/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle: key, message }),
+        signal: abortController.signal,
+      })
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        streaming.value = false
+        streamingHandle.value = null
+        isThinking.value = false
+        return
+      }
+      throw e
+    }
 
     if (!response.ok) {
       pushMessage(key, {
@@ -124,68 +148,70 @@ export function useTeamChat(teamId: number, apiBase: string) {
 
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
-    // Index of the assistant bubble in threads.value[key]; -1 = not yet created.
-    // We always update via threads.value[key][idx] to keep Vue's reactivity working.
     let assistantIdx = -1
     let buffer = ''
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      buffer += decoder.decode(value, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop()!
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        try {
-          const data = JSON.parse(line.slice(6))
-          if (data.thinking === true) {
-            isThinking.value = true
-          } else if (data.thinking === false) {
-            isThinking.value = false
-          } else if (data.token) {
-            isThinking.value = false
-            if (assistantIdx === -1) {
-              if (!threads.value[key]) threads.value[key] = []
-              threads.value[key].push({
-                id: Date.now() + 1, thread: key, sender: key,
-                content: '', created_at: new Date().toISOString(),
-              })
-              assistantIdx = threads.value[key].length - 1
-            }
-            threads.value[key]![assistantIdx]!.content += data.token
-            scrollToBottom()
-          } else if (data.tool_call) {
-            if (assistantIdx === -1) {
-              if (!threads.value[key]) threads.value[key] = []
-              threads.value[key].push({
-                id: Date.now() + 1, thread: key, sender: key,
-                content: '', created_at: new Date().toISOString(),
-              })
-              assistantIdx = threads.value[key].length - 1
-            }
-            threads.value[key]![assistantIdx]!.content += `\n[[TOOL_CALL:${JSON.stringify(data.tool_call)}]]\n`
-            scrollToBottom()
-          } else if (data.tool_result) {
-            if (assistantIdx !== -1) {
-              threads.value[key]![assistantIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop()!
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.thinking === true) {
+              isThinking.value = true
+            } else if (data.thinking === false) {
+              isThinking.value = false
+            } else if (data.token) {
+              isThinking.value = false
+              if (assistantIdx === -1) {
+                if (!threads.value[key]) threads.value[key] = []
+                threads.value[key].push({
+                  id: Date.now() + 1, thread: key, sender: key,
+                  content: '', created_at: new Date().toISOString(),
+                })
+                assistantIdx = threads.value[key].length - 1
+              }
+              threads.value[key]![assistantIdx]!.content += data.token
               scrollToBottom()
+            } else if (data.tool_call) {
+              if (assistantIdx === -1) {
+                if (!threads.value[key]) threads.value[key] = []
+                threads.value[key].push({
+                  id: Date.now() + 1, thread: key, sender: key,
+                  content: '', created_at: new Date().toISOString(),
+                })
+                assistantIdx = threads.value[key].length - 1
+              }
+              threads.value[key]![assistantIdx]!.content += `\n[[TOOL_CALL:${JSON.stringify(data.tool_call)}]]\n`
+              scrollToBottom()
+            } else if (data.tool_result) {
+              if (assistantIdx !== -1) {
+                threads.value[key]![assistantIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
+                scrollToBottom()
+              }
+            } else if (data.done && data.message_id) {
+              if (assistantIdx !== -1) threads.value[key]![assistantIdx]!.id = data.message_id
+            } else if (data.error) {
+              if (assistantIdx === -1) {
+                if (!threads.value[key]) threads.value[key] = []
+                threads.value[key].push({
+                  id: Date.now() + 1, thread: key, sender: key,
+                  content: '', created_at: new Date().toISOString(),
+                })
+                assistantIdx = threads.value[key].length - 1
+              }
+              threads.value[key]![assistantIdx]!.content = `[Error: ${data.error}]`
             }
-          } else if (data.done && data.message_id) {
-            if (assistantIdx !== -1) threads.value[key]![assistantIdx]!.id = data.message_id
-          } else if (data.error) {
-            if (assistantIdx === -1) {
-              if (!threads.value[key]) threads.value[key] = []
-              threads.value[key].push({
-                id: Date.now() + 1, thread: key, sender: key,
-                content: '', created_at: new Date().toISOString(),
-              })
-              assistantIdx = threads.value[key].length - 1
-            }
-            threads.value[key]![assistantIdx]!.content = `[Error: ${data.error}]`
-          }
-        } catch { /* skip malformed */ }
+          } catch { /* skip malformed */ }
+        }
       }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') throw e
     }
 
     if (assistantIdx !== -1) {
@@ -193,6 +219,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
       msg.content = convertInlineJsonToToolMarkers(msg.content)
     }
 
+    abortController = null
     isThinking.value = false
     streaming.value = false
     streamingHandle.value = null
@@ -205,17 +232,30 @@ export function useTeamChat(teamId: number, apiBase: string) {
     streaming.value = true
     streamingHandle.value = key
     isThinking.value = false
+    abortController = new AbortController()
 
     pushMessage(key, {
       id: Date.now(), thread: key, sender: 'user',
       content: prompt, created_at: new Date().toISOString(),
     })
 
-    const response = await fetch(`${apiBase}/teams/${teamId}/build/orchestrate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
-    })
+    let response: Response
+    try {
+      response = await fetch(`${apiBase}/teams/${teamId}/build/orchestrate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+        signal: abortController.signal,
+      })
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+        streaming.value = false
+        streamingHandle.value = null
+        isThinking.value = false
+        return
+      }
+      throw e
+    }
 
     if (!response.ok) {
       streaming.value = false
@@ -244,37 +284,41 @@ export function useTeamChat(teamId: number, apiBase: string) {
       return currentMsgIdx
     }
 
-    while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      orchBuffer += decoder.decode(value, { stream: true })
-      const lines = orchBuffer.split('\n')
-      orchBuffer = lines.pop()!
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue
-        try {
-          const data = JSON.parse(line.slice(6))
-          if (data.done) break
-          if (data.phase === 'specialist') {
-            currentSpeaker = null
-            continue
-          }
-          if (data.speaker && data.token) {
-            const idx = getOrCreateBubbleIdx(data.speaker)
-            threads.value[key]![idx]!.content += data.token
-            scrollToBottom()
-          } else if (data.speaker && data.tool_call) {
-            const idx = getOrCreateBubbleIdx(data.speaker)
-            threads.value[key]![idx]!.content += `\n[[TOOL_CALL:${JSON.stringify(data.tool_call)}]]\n`
-            scrollToBottom()
-          } else if (data.speaker && data.tool_result) {
-            if (currentMsgIdx !== -1) {
-              threads.value[key]![currentMsgIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
-              scrollToBottom()
+    try {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        orchBuffer += decoder.decode(value, { stream: true })
+        const lines = orchBuffer.split('\n')
+        orchBuffer = lines.pop()!
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.done) break
+            if (data.phase === 'specialist') {
+              currentSpeaker = null
+              continue
             }
-          }
-        } catch { /* skip malformed */ }
+            if (data.speaker && data.token) {
+              const idx = getOrCreateBubbleIdx(data.speaker)
+              threads.value[key]![idx]!.content += data.token
+              scrollToBottom()
+            } else if (data.speaker && data.tool_call) {
+              const idx = getOrCreateBubbleIdx(data.speaker)
+              threads.value[key]![idx]!.content += `\n[[TOOL_CALL:${JSON.stringify(data.tool_call)}]]\n`
+              scrollToBottom()
+            } else if (data.speaker && data.tool_result) {
+              if (currentMsgIdx !== -1) {
+                threads.value[key]![currentMsgIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
+                scrollToBottom()
+              }
+            }
+          } catch { /* skip malformed */ }
+        }
       }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') throw e
     }
 
     const orchMsgs = threads.value[key]
@@ -286,6 +330,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
       }
     }
 
+    abortController = null
     isThinking.value = false
     streaming.value = false
     streamingHandle.value = null
@@ -312,6 +357,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     streamingHandle,
     isThinking,
     sendMessage,
+    stopStreaming,
     handleKeydown,
   }
 }

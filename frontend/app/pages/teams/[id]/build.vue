@@ -93,6 +93,7 @@ onMounted(async () => {
         :role-of="roleOf"
         @update:input-text="chat.inputText.value = $event"
         @send="chat.sendMessage()"
+        @stop="chat.stopStreaming()"
         @keydown="chat.handleKeydown"
       />
     </div>

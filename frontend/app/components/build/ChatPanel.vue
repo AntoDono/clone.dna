@@ -20,6 +20,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:inputText': [value: string]
   send: []
+  stop: []
   keydown: [e: KeyboardEvent]
 }>()
 
@@ -134,7 +135,7 @@ const inputModel = computed({
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col min-w-0">
+  <div class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
 
     <!-- Thread header -->
     <div class="flex-shrink-0 px-6 py-3 border-b border-slate-800 flex items-center gap-3">
@@ -314,14 +315,22 @@ const inputModel = computed({
           @keydown="emit('keydown', $event)"
         ></textarea>
         <button
-          :disabled="!inputText.trim() || streaming || !activeThread"
+          v-if="streaming"
+          class="px-5 py-3 text-sm font-semibold border border-red-600 text-red-400 hover:bg-red-950/40 transition-colors"
+          @click="emit('stop')"
+        >
+          Stop ■
+        </button>
+        <button
+          v-else
+          :disabled="!inputText.trim() || !activeThread"
           class="px-5 py-3 text-sm font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
           :class="activeThread === 'orchestrate'
             ? 'border-green-600 text-green-400 hover:bg-green-950/40'
             : 'border-blue-600 text-blue-400 hover:bg-blue-950/40'"
           @click="emit('send')"
         >
-          {{ streaming ? '...' : activeThread === 'orchestrate' ? 'Build →' : 'Send →' }}
+          {{ activeThread === 'orchestrate' ? 'Build →' : 'Send →' }}
         </button>
       </div>
       <p class="text-xs text-slate-700 mt-2">Enter to send · Shift+Enter for new line</p>
