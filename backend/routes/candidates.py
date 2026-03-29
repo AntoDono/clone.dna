@@ -31,6 +31,7 @@ from extractor import (
     build_github_profile,
     extract_from_website,
     extract_from_resume,
+    score_candidates_against_jd,
 )
 from routes.teams import get_slot, save_candidate
 
@@ -49,6 +50,10 @@ class ExtractWebsiteRequest(PydanticModel):
 
 class ExtractResumeRequest(PydanticModel):
     text: str
+
+class FitScoreRequest(PydanticModel):
+    job_description: str
+    role: str = "swe"
 
 
 # ── Headhunt SSE ──────────────────────────────────────────────────────────────
@@ -112,6 +117,55 @@ def clear_headhunt_cache(team_id: int):
         GithubProfileCache.delete().execute()
     except Exception:
         pass
+
+
+@router.post("/teams/{team_id}/headhunt/score")
+def score_headhunt_candidates(team_id: int, body: FitScoreRequest):
+    """
+    Score all cached headhunt candidates against a job description using Grok.
+
+    Sends all candidate profiles to Grok in a single structured call — returns ranked
+    scores per candidate across technical_fit, domain_fit, and seniority_match dimensions,
+    plus per-candidate strengths, gaps, and reasoning. Uses the team's in-memory headhunt
+    cache; call the headhunt stream first to populate candidates.
+    """
+    try:
+        Team.get_by_id(team_id)
+    except Team.DoesNotExist:
+        raise HTTPException(404, "Team not found")
+
+    cached = _headhunt_cache.get(team_id, [])
+    candidates = [event["candidate"] for event in cached if "candidate" in event]
+
+    if not candidates:
+        raise HTTPException(422, "No headhunted candidates found for this team — run the headhunt stream first")
+
+    if len(body.job_description.strip()) < 20:
+        raise HTTPException(422, "job_description is too short — provide at least a sentence describing the role")
+
+    result = score_candidates_against_jd(candidates, body.job_description, body.role)
+    if not result:
+        raise HTTPException(503, "Grok fit scoring unavailable — check XAI_API_KEY")
+
+    # Merge scores back into candidate profiles for a single enriched response
+    score_map = {s.handle: s for s in result.scores}
+    ranked = sorted(result.scores, key=lambda s: s.overall_score, reverse=True)
+
+    return {
+        "job_description": body.job_description[:500],
+        "role": body.role,
+        "total_scored": len(result.scores),
+        "ranked": [
+            {
+                **score_map[s.handle].model_dump(),
+                "candidate": next(
+                    (c for c in candidates if c.get("github_handle") == s.handle),
+                    None,
+                ),
+            }
+            for s in ranked
+        ],
+    }
 
 
 # ── Role search ───────────────────────────────────────────────────────────────

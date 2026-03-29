@@ -130,6 +130,45 @@ const topLangs = computed(() =>
         </div>
       </div>
 
+      <!-- Semantic code analysis (Grok-derived) -->
+      <div v-if="candidate.architectural_patterns?.length || candidate.code_quality_signals?.length || candidate.domain_expertise?.length"
+           class="border-t border-slate-800 pt-4 space-y-3">
+        <p class="text-xs font-medium text-slate-500 uppercase tracking-wide">Code Analysis</p>
+
+        <div v-if="candidate.domain_expertise?.length">
+          <p class="text-xs text-slate-600 mb-1">Domains</p>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="d in candidate.domain_expertise"
+              :key="d"
+              class="text-xs border border-violet-700 text-violet-400 bg-violet-950/40 px-2 py-0.5"
+            >{{ d }}</span>
+          </div>
+        </div>
+
+        <div v-if="candidate.architectural_patterns?.length">
+          <p class="text-xs text-slate-600 mb-1">Architecture</p>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="p in candidate.architectural_patterns"
+              :key="p"
+              class="text-xs border border-emerald-700 text-emerald-400 bg-emerald-950/40 px-2 py-0.5"
+            >{{ p }}</span>
+          </div>
+        </div>
+
+        <div v-if="candidate.code_quality_signals?.length">
+          <p class="text-xs text-slate-600 mb-1">Quality Signals</p>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="s in candidate.code_quality_signals"
+              :key="s"
+              class="text-xs border border-slate-600 text-slate-400 bg-slate-800/60 px-2 py-0.5"
+            >{{ s }}</span>
+          </div>
+        </div>
+      </div>
+
     </div>
 
     <!-- Collapsed summary -->

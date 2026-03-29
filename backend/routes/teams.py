@@ -25,7 +25,8 @@ ROLE_LAYOUT = [
     {"role": "designer", "slot_index": 0},
 ]
 
-JSON_FIELDS = {"top_repos", "languages", "skills", "soft_skills"}
+JSON_FIELDS = {"top_repos", "languages", "skills", "soft_skills",
+               "architectural_patterns", "code_quality_signals", "domain_expertise"}
 
 
 class CreateTeamRequest(PydanticModel):
@@ -92,6 +93,9 @@ def save_candidate(slot: RoleSlot, profile: dict) -> dict:
             languages=json.dumps(profile.get("languages", {})),
             skills=json.dumps(profile.get("skills", [])),
             soft_skills=json.dumps(profile.get("soft_skills", [])),
+            architectural_patterns=json.dumps(profile.get("architectural_patterns", [])),
+            code_quality_signals=json.dumps(profile.get("code_quality_signals", [])),
+            domain_expertise=json.dumps(profile.get("domain_expertise", [])),
             **scalar,
         )
         slot.filled = True
