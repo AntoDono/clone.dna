@@ -62,7 +62,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950 flex flex-col">
+  <div class="h-screen bg-slate-950 flex flex-col">
 
     <!-- Header -->
     <header class="flex-shrink-0 bg-slate-900/80 border-b border-slate-800 px-6 py-4 flex items-center justify-between backdrop-blur">
