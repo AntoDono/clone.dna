@@ -23,6 +23,7 @@ from pydantic import BaseModel as PydanticModel
 
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage, User
+from routes.utils import sse as _sse_line
 from trainer import agent_chat, compare_generation, grok_chat
 from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
@@ -103,7 +104,7 @@ def _get_candidate_for_team(team_id: int, handle: str) -> Candidate:
 
 def _sse(data: dict) -> str:
     """Format a dict as an SSE data line for StreamingResponse."""
-    return f"data: {json.dumps(data)}\n\n"
+    return _sse_line(data)
 
 
 _ATTACHMENT_PREFIX = "__ATTACHMENT__:"
@@ -175,17 +176,23 @@ def get_build_artifacts(team_id: int, current_user: User = Depends(get_current_u
 
     latest_orchestration = None
     if latest_orchestration_path.exists():
-        latest_orchestration = json.loads(latest_orchestration_path.read_text(encoding="utf-8"))
+        try:
+            latest_orchestration = json.loads(latest_orchestration_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            latest_orchestration = None
 
     audit_events: list[dict] = []
     if audit_path.exists():
-        for line in audit_path.read_text(encoding="utf-8").splitlines()[-50:]:
-            if not line.strip():
-                continue
-            try:
-                audit_events.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+        try:
+            for line in audit_path.read_text(encoding="utf-8").splitlines()[-50:]:
+                if not line.strip():
+                    continue
+                try:
+                    audit_events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        except OSError:
+            pass
 
     return {
         "workspace": _workspace_for_team(team_id),
