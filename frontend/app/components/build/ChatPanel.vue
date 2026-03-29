@@ -33,6 +33,7 @@ const emit = defineEmits<{
   send: []
   stop: []
   keydown: [e: KeyboardEvent]
+  'toggle-grok': []
 }>()
 
 const ROLE_BADGE: Record<string, string> = { pm: 'PM', swe: 'SWE', designer: 'Design' }
@@ -381,7 +382,21 @@ const inputModel = computed({
           {{ activeThread === 'orchestrate' ? 'Build →' : 'Send →' }}
         </button>
       </div>
-      <p class="text-xs text-slate-700 mt-2">Enter to send · Shift+Enter for new line</p>
+      <div class="flex items-center justify-between mt-2">
+        <p class="text-xs text-slate-700">Enter to send · Shift+Enter for new line · Left Shift toggles Grok</p>
+        <button
+          class="flex items-center gap-1.5 text-xs transition-colors select-none"
+          :class="useGrok ? 'text-orange-400 hover:text-orange-300' : 'text-slate-500 hover:text-slate-300'"
+          title="Toggle Grok mode (or press Left Shift)"
+          @click="emit('toggle-grok')"
+        >
+          <span
+            class="w-2 h-2 rounded-full flex-shrink-0 transition-colors duration-200"
+            :class="useGrok ? 'bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.7)]' : 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'"
+          ></span>
+          {{ useGrok ? 'Local Boost' : 'Local' }}
+        </button>
+      </div>
     </div>
   </div>
 </template>

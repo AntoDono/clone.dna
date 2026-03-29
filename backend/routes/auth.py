@@ -26,7 +26,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "clone-dna-dev-secret-change-in-prod")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_DAYS = 30
 
-_pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_pwd = CryptContext(schemes=["pbkdf2_sha256"], deprecated="auto")
 _bearer = HTTPBearer(auto_error=False)
 
 

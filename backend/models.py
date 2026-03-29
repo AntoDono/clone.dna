@@ -174,3 +174,16 @@ class GithubProfileCache(BaseModel):
 
     class Meta:
         indexes = ((("github_handle", "role"), True),)  # unique per handle + role
+
+
+class HeadhuntCache(BaseModel):
+    """SQLite-backed cache for the assembled headhunt result list per team.
+
+    Stores the full list of SSE events (role + candidate dicts) as JSON so that
+    the in-memory _headhunt_cache can be restored after a server restart.
+    One row per team; replaced on each fresh headhunt run.
+    """
+
+    team        = ForeignKeyField(Team, backref="headhunt_cache", on_delete="CASCADE", unique=True)
+    results_json = TextField()   # JSON-encoded list[{role, candidate}]
+    cached_at   = DateTimeField(default=datetime.utcnow)

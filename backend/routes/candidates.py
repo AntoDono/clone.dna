@@ -24,7 +24,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel as PydanticModel
 
 from db import db
-from models import Team, RoleSlot, Candidate, User
+from models import Team, RoleSlot, Candidate, User, HeadhuntCache
 from extractor import (
     search_candidates,
     search_users_raw,
@@ -41,6 +41,33 @@ router = APIRouter()
 # ── In-memory caches ─────────────────────────────────────────────────────────
 _headhunt_cache: dict[int, list[dict]] = {}
 _search_cache: dict[tuple[int, int], dict] = {}  # (team_id, slot_id) -> response
+
+
+# ── SQLite headhunt cache helpers ─────────────────────────────────────────────
+
+def _db_load_headhunt(team_id: int) -> list[dict] | None:
+    """Return persisted headhunt events for team_id, or None if absent."""
+    try:
+        row = HeadhuntCache.get(HeadhuntCache.team == team_id)
+        return json.loads(row.results_json)
+    except HeadhuntCache.DoesNotExist:
+        return None
+
+
+def _db_save_headhunt(team_id: int, events: list[dict]) -> None:
+    """Upsert the headhunt event list for team_id into SQLite."""
+    HeadhuntCache.insert(
+        team=team_id,
+        results_json=json.dumps(events),
+    ).on_conflict(
+        conflict_target=[HeadhuntCache.team],
+        update={HeadhuntCache.results_json: json.dumps(events)},
+    ).execute()
+
+
+def _db_clear_headhunt(team_id: int) -> None:
+    """Delete the persisted headhunt cache row for team_id."""
+    HeadhuntCache.delete().where(HeadhuntCache.team == team_id).execute()
 
 
 class SelectCandidateRequest(PydanticModel):
@@ -65,6 +92,12 @@ async def headhunt_stream(team_id: int, force: bool = Query(False), current_user
     require_team_owner(team_id, current_user)
 
     async def generator():
+        # Warm the in-memory cache from SQLite if the process just restarted
+        if not force and team_id not in _headhunt_cache:
+            persisted = await asyncio.to_thread(_db_load_headhunt, team_id)
+            if persisted is not None:
+                _headhunt_cache[team_id] = persisted
+
         if not force and team_id in _headhunt_cache:
             yield f"data: {json.dumps({'cached': True})}\n\n"
             for event in _headhunt_cache[team_id]:
@@ -98,6 +131,7 @@ async def headhunt_stream(team_id: int, force: bool = Query(False), current_user
                     yield f"data: {json.dumps(event)}\n\n"
 
         _headhunt_cache[team_id] = collected
+        await asyncio.to_thread(_db_save_headhunt, team_id, collected)
         yield f"data: {json.dumps({'done': True, 'total': total_found})}\n\n"
 
     return StreamingResponse(
@@ -111,6 +145,10 @@ async def headhunt_stream(team_id: int, force: bool = Query(False), current_user
 def clear_headhunt_cache(team_id: int, current_user: User = Depends(get_current_user)):
     require_team_owner(team_id, current_user)
     _headhunt_cache.pop(team_id, None)
+    try:
+        _db_clear_headhunt(team_id)
+    except Exception:
+        pass
     try:
         from models import GithubProfileCache
         GithubProfileCache.delete().execute()
