@@ -6,9 +6,12 @@
  * Emergency calibration enables DNA cloning simulation without a real GPU.
  */
 const emergencyCalibration = useState('emergencyCalibration', () => false)
+const route = useRoute()
 
+// Only toggle emergency calibration on non-build pages — the build page uses
+// Left Shift for the Grok toggle and manages its own keydown listener.
 function onKeyDown(e: KeyboardEvent) {
-  if (e.key === 'Shift' && !e.repeat) {
+  if (e.key === 'Shift' && !e.repeat && !route.path.endsWith('/build')) {
     emergencyCalibration.value = !emergencyCalibration.value
   }
 }
@@ -24,7 +27,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
     <Transition name="ec-dot">
       <div
         v-if="emergencyCalibration"
-        class="fixed bottom-4 right-4 z-[999] w-3 h-3 rounded-full bg-orange-500 shadow-lg shadow-orange-500/40"
+        class="fixed top-4 right-4 z-[999] w-3 h-3 rounded-full bg-orange-500 shadow-lg shadow-orange-500/40"
         title="Emergency calibration active"
       />
     </Transition>
