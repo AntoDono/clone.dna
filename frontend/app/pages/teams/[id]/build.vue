@@ -44,6 +44,7 @@ const chat = useTeamChat(teamId, config.public.apiBase as string)
 
 function onGrokKeydown(e: KeyboardEvent) {
   if (e.code === 'ShiftLeft' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    console.log("Toggled")
     chat.toggleGrok()
   }
 }
