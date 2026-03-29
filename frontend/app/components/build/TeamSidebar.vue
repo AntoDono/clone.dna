@@ -7,7 +7,10 @@ const props = defineProps<{
   activeThread: ActiveThread | null
   threads: Record<string, ChatMessage[]>
   roleOf: (handle: string) => string
+  teamId: number
 }>()
+
+const config = useRuntimeConfig()
 
 const emit = defineEmits<{
   setThread: [thread: ActiveThread]
@@ -86,10 +89,20 @@ const ROLE_COLOR_CLASS: Record<string, string> = {
               <span v-if="!candidate.dna_cloned" class="text-xs text-slate-700">no DNA</span>
             </div>
           </div>
-          <span
-            v-if="(threads[candidate.github_handle]?.length ?? 0) > 0"
-            class="flex-shrink-0 text-xs text-slate-600 tabular-nums"
-          >{{ threads[candidate.github_handle]?.length }}</span>
+          <div class="flex-shrink-0 flex items-center gap-1.5">
+            <span
+              v-if="(threads[candidate.github_handle]?.length ?? 0) > 0"
+              class="text-xs text-slate-600 tabular-nums"
+            >{{ threads[candidate.github_handle]?.length }}</span>
+            <a
+              v-if="candidate.dna_cloned"
+              :href="`${config.public.apiBase}/registry/${teamId}/${candidate.github_handle}/download`"
+              download
+              class="text-xs text-green-600 hover:text-green-400 transition-colors"
+              title="Download .dna block"
+              @click.stop
+            >↓</a>
+          </div>
         </div>
       </button>
     </div>

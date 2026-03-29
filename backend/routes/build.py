@@ -11,6 +11,7 @@ from pydantic import BaseModel as PydanticModel
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage
 from trainer import agent_chat
+from trainer.orchestrator import assign_tasks
 from trainer.tools import TOOL_SCHEMAS
 
 router = APIRouter()
@@ -247,40 +248,9 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
 
         # ── Step 2: Grok assigns tasks to specialists ─────────────────────────
         specialists = [c for c in cloned if c.github_handle != lead_handle]
-        if specialists and pm_response:
-            from openai import OpenAI as _OpenAI
-            grok = _OpenAI(api_key=os.getenv("XAI_API_KEY", ""), base_url="https://api.x.ai/v1")
-            specialist_list = ", ".join(
-                f"{c.github_handle} ({c.role_slot.role})" for c in specialists
-            )
-            parse_resp = grok.chat.completions.create(
-                model="grok-3-mini",
-                messages=[{
-                    "role": "user",
-                    "content": (
-                        f"PM said:\n{pm_response}\n\n"
-                        f"Team specialists: {specialist_list}.\n"
-                        "For each specialist, write ONE short task assignment sentence. "
-                        "Return JSON: [{\"handle\": \"...\", \"task\": \"...\"}]. "
-                        "Return ONLY valid JSON."
-                    ),
-                }],
-                temperature=0.3,
-                max_tokens=512,
-            )
-            raw = (parse_resp.choices[0].message.content or "").strip()
-            if raw.startswith("```"):
-                raw = raw.split("```")[1]
-                if raw.startswith("json"):
-                    raw = raw[4:]
-            try:
-                assignments = json.loads(raw.strip())
-            except Exception:
-                assignments = [{"handle": c.github_handle, "task": body.prompt}
-                               for c in specialists]
-        else:
-            assignments = [{"handle": c.github_handle, "task": body.prompt}
-                           for c in specialists]
+        assignments = await asyncio.to_thread(
+            assign_tasks, pm_response, specialists, body.prompt
+        )
 
         # ── Step 3: Each specialist responds ─────────────────────────────────
         handle_map = {c.github_handle: c for c in specialists}

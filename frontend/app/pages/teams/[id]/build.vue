@@ -78,6 +78,7 @@ onMounted(async () => {
         :active-thread="chat.activeThread.value"
         :threads="chat.threads.value"
         :role-of="roleOf"
+        :team-id="teamId"
         @set-thread="chat.setThread"
       />
       <ChatPanel

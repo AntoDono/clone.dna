@@ -29,32 +29,48 @@ logger = logging.getLogger(__name__)
 _cache_lock = threading.Lock()
 _base: dict = {}
 _adapters_loaded: set[str] = set()
+_training_count: int = 0  # number of training jobs currently holding the eviction lock
 
 
 @contextmanager
 def model_evicted():
-    """
-    Context manager that temporarily removes the base model from VRAM so that
-    a memory-hungry operation (e.g. LoRA training) can run without OOMing.
-    The model is reloaded when the block exits.
-    """
-    with _cache_lock:
-        model = _base.pop("model", None)
-        tokenizer = _base.pop("tokenizer", None)
-        _adapters_loaded.clear()
+    """Temporarily remove the inference model from VRAM for a training job.
 
-    if model is not None:
-        del model
-    if tokenizer is not None:
-        del tokenizer
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
+    Reference-counted: the first job in evicts the model; intermediate jobs
+    find it already gone and proceed directly; the last job out reloads it.
+    This allows N concurrent training runs (one per GPU) without the second
+    job's exit prematurely reloading the inference model while the first is
+    still training.
+    """
+    global _training_count
+
+    model = tokenizer = None
+    is_first = False
+    with _cache_lock:
+        _training_count += 1
+        if _training_count == 1:
+            is_first = True
+            model = _base.pop("model", None)
+            tokenizer = _base.pop("tokenizer", None)
+            _adapters_loaded.clear()
+
+    if is_first:
+        if model is not None:
+            del model
+        if tokenizer is not None:
+            del tokenizer
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     try:
         yield
     finally:
-        ensure_base_model()
+        with _cache_lock:
+            _training_count -= 1
+            is_last = _training_count == 0
+        if is_last:
+            ensure_base_model()
 
 
 def _base_model_name() -> str:
@@ -62,10 +78,21 @@ def _base_model_name() -> str:
 
 
 def ensure_base_model() -> tuple:
-    """Load base model + tokenizer into cache if not already done. Thread-safe."""
+    """Load base model + tokenizer into cache if not already done. Thread-safe.
+
+    If a training job is currently active (_training_count > 0) the reload is
+    skipped — the last training job to exit will call ensure_base_model() itself
+    once _training_count drops to 0, so inference will still be restored.
+    """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     with _cache_lock:
+        if _training_count > 0:
+            logger.info(
+                "Inference: skipping model reload — %d training job(s) still active",
+                _training_count,
+            )
+            return _base.get("model"), _base.get("tokenizer")
         if "model" not in _base:
             name = _base_model_name()
             from .model_utils import resolve_model_path

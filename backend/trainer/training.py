@@ -1,4 +1,27 @@
-"""LoRA adapter training — trains a candidate DNA block from instruction-response pairs."""
+"""
+LoRA adapter training — mints a candidate .dna block from instruction-response pairs.
+
+Pipeline
+--------
+1. collect_training_data()  — fetch raw code blobs from the candidate's GitHub repos
+2. generate_training_pairs() — call Grok-3 to generate (instruction, code) pairs
+3. generate_system_prompt()  — derive a persona system prompt from the candidate profile
+4. train_lora()              — PEFT LoRA fine-tune on the candidate pairs mixed with:
+     - alpaca-cleaned base instruct data (BASE_INSTRUCT_RATIO × candidate pair count)
+       to prevent catastrophic forgetting of general instruction-following ability
+     - TOOL_USE_EXAMPLES to preserve the model's tool-use formatting ability
+
+Output (saved to output_dir/)
+------------------------------
+  manifest.json          — block metadata, vLLM compatibility, eval summary
+  eval.json              — training metrics: loss, pair counts, benchmark placeholder
+  sources.json           — full repo provenance (name, URL, language, stars)
+  consent.json           — opt-in record stub (pending registry enrollment)
+  profile.md             — human-readable candidate profile + PEFT usage snippet
+  adapter_config.json    — PEFT LoRA config (auto-generated)
+  adapter_model.safetensors — LoRA weights (load with PEFT or vLLM --enable-lora)
+  tokenizer files        — tokenizer state for standalone loading
+"""
 
 from __future__ import annotations
 
@@ -16,6 +39,12 @@ from .tool_examples import TOOL_USE_EXAMPLES
 logger = logging.getLogger(__name__)
 
 BASE_INSTRUCT_RATIO = 0.5
+
+
+class _TrainingResult:
+    """Carries loss metrics out of the training callback into the save block."""
+    final_loss: float | None = None
+    best_loss: float | None = None
 
 
 def _sample_base_instruct_pairs(count: int) -> list[dict]:
@@ -55,6 +84,10 @@ def train_lora(
     Train a LoRA adapter on the base model using the generated pairs.
     Streams training metrics via `emit`. Saves adapter + manifest to output_dir.
     Returns a summary dict.
+
+    GPU selection is handled entirely by CUDA_VISIBLE_DEVICES in the environment —
+    set it before starting the server and the HuggingFace device_map="auto" loader
+    will confine itself to the visible devices automatically.
 
     Designed to be called via asyncio.to_thread() — blocks its worker thread
     and calls emit() directly from TrainerCallback.on_log().
@@ -129,6 +162,11 @@ def train_lora(
         })
 
         def _format(pair: dict) -> str:
+            """
+            Render an instruction-response pair as a single training string using the
+            tokenizer's chat template.  Falls back to a plain markdown format if the
+            tokenizer doesn't expose apply_chat_template (e.g. older checkpoints).
+            """
             messages = [
                 {"role": "user", "content": pair["instruction"]},
                 {"role": "assistant", "content": pair["response"]},
@@ -146,6 +184,11 @@ def train_lora(
         MAX_LEN = 2048
 
         def _tokenize(example: dict):
+            """
+            Tokenize a single training example to fixed length MAX_LEN.
+            Labels are set equal to input_ids so the model trains on every token
+            (causal LM objective with no masking of the prompt portion).
+            """
             text = _format(example)
             enc = tokenizer(text, truncation=True, max_length=MAX_LEN, padding="max_length")
             enc["labels"] = enc["input_ids"].copy()
@@ -182,18 +225,24 @@ def train_lora(
             "total_steps": total_steps,
         })
 
+        _training_result = _TrainingResult()
+
         class DirectEmitCallback(TrainerCallback):
             def on_log(self, args, state, control, logs=None, **kwargs):
                 if not logs:
                     return
                 loss = logs.get("loss") or logs.get("train_loss")
                 if loss is not None:
+                    loss_val = round(float(loss), 4)
+                    _training_result.final_loss = loss_val
+                    if _training_result.best_loss is None or loss_val < _training_result.best_loss:
+                        _training_result.best_loss = loss_val
                     emit({
                         "phase": "training",
                         "candidate": handle,
                         "step": state.global_step,
                         "total_steps": total_steps,
-                        "loss": round(float(loss), 4),
+                        "loss": loss_val,
                     })
 
         training_args = TrainingArguments(
@@ -235,6 +284,18 @@ def train_lora(
             torch.cuda.empty_cache()
         emit({"phase": "saving", "candidate": handle, "message": "Training VRAM freed — reloading inference model"})
 
+    created_at = datetime.now(timezone.utc).isoformat()
+    top_repos = candidate.get("top_repos", [])
+    skills = candidate.get("skills", [])
+    languages = candidate.get("languages", {})
+
+    # Collect training loss history from the DirectEmitCallback via trainer state.
+    # After trainer.train() the log_history is available on trainer.state — but
+    # trainer/model are already deleted above.  We track losses in the callback instead.
+    # Pull them out via the trainer return value stored in the emit closure.
+    final_loss = getattr(_training_result, "final_loss", None)
+    best_loss = getattr(_training_result, "best_loss", None)
+
     manifest = {
         "name": f"{handle}-dna",
         "version": "1.0.0",
@@ -242,21 +303,139 @@ def train_lora(
         "candidate": {
             "handle": handle,
             "name": candidate.get("name") or handle,
-            "sources": [r.get("url", "") for r in candidate.get("top_repos", [])[:3]],
-            "expertise_domains": candidate.get("skills", [])[:5],
+            "sources": [r.get("url", "") for r in top_repos[:3]],
+            "expertise_domains": skills[:5],
+            "total_contributions_analyzed": sum(
+                r.get("stars", 0) for r in top_repos
+            ),
+            "consent_verified": False,
         },
         "base_model": base_model,
         "rank": 32,
-        "alpha": 64,
+        "alpha": 128,
+        "quantization": "INT4" if os.getenv("QUANTIZATION_BITS") == "4" else "FP16",
+        "vllm_compatible": True,
+        "tags": skills[:8],
         "training_pairs": len(all_pairs),
         "candidate_pairs": len(pairs),
         "base_instruct_pairs": len(base_pairs),
         "num_epochs": num_epochs,
-        "vllm_compatible": True,
-        "created": datetime.now(timezone.utc).isoformat(),
+        "created": created_at,
+        "eval_summary": {
+            "final_loss": final_loss,
+            "best_loss": best_loss,
+            "style_consistency": None,
+            "domain_accuracy": None,
+            "teacher_model": "grok-3",
+        },
     }
-    with open(Path(output_dir) / "manifest.json", "w") as f:
+    out = Path(output_dir)
+    with open(out / "manifest.json", "w") as f:
         json.dump(manifest, f, indent=2)
+
+    # eval.json — training metrics and quality summary
+    eval_data = {
+        "handle": handle,
+        "base_model": base_model,
+        "training": {
+            "total_pairs": len(all_pairs),
+            "candidate_pairs": len(pairs),
+            "base_instruct_pairs": len(base_pairs),
+            "tool_use_pairs": len(TOOL_USE_EXAMPLES),
+            "num_epochs": num_epochs,
+            "rank": 32,
+            "alpha": 128,
+            "final_loss": final_loss,
+            "best_loss": best_loss,
+        },
+        "benchmarks": {
+            "style_consistency": None,
+            "domain_accuracy": None,
+            "humaneval_score": None,
+            "note": "Run eval suite post-training to populate benchmark scores.",
+        },
+        "teacher_model": "grok-3",
+        "created": created_at,
+    }
+    with open(out / "eval.json", "w") as f:
+        json.dump(eval_data, f, indent=2)
+
+    # sources.json — full repo provenance
+    sources = {
+        "handle": handle,
+        "repos": [
+            {
+                "name": r.get("name", ""),
+                "url": r.get("url", ""),
+                "language": r.get("language", ""),
+                "stars": r.get("stars", 0),
+                "description": r.get("description", ""),
+                "topics": r.get("topics", []),
+            }
+            for r in top_repos
+        ],
+        "languages": languages,
+        "license_filter": "MIT/Apache-2.0 only",
+        "created": created_at,
+    }
+    with open(out / "sources.json", "w") as f:
+        json.dump(sources, f, indent=2)
+
+    # consent.json — opt-in record (stub; full consent requires registry enrollment)
+    consent = {
+        "handle": handle,
+        "consent_status": "pending",
+        "public_repos_only": True,
+        "revocable": True,
+        "note": (
+            "Full consent requires developer opt-in at registry.dnablocks.dev. "
+            "This block was minted from MIT/Apache-2.0 licensed public repositories only."
+        ),
+        "created": created_at,
+    }
+    with open(out / "consent.json", "w") as f:
+        json.dump(consent, f, indent=2)
+
+    # profile.md — human-readable candidate profile
+    lang_list = ", ".join(list(languages.keys())[:6]) or "N/A"
+    skill_list = ", ".join(skills[:8]) or "N/A"
+    repo_lines = "\n".join(
+        f"- [{r.get('name', '')}]({r.get('url', '')}) — {r.get('description', '') or r.get('language', '')}"
+        for r in top_repos[:5]
+    )
+    profile_md = f"""# {candidate.get('name') or handle} (@{handle})
+
+**Role:** {candidate.get('description') or 'Software Developer'}
+
+## Bio
+{candidate.get('bio') or 'No bio available.'}
+
+## Expertise Domains
+{skill_list}
+
+## Languages
+{lang_list}
+
+## Top Repositories
+{repo_lines or '_(none available)_'}
+
+## DNA Block Stats
+- Training pairs: {len(pairs)} candidate + {len(base_pairs)} base instruct + {len(TOOL_USE_EXAMPLES)} tool-use
+- Base model: `{base_model}`
+- LoRA rank: 32, alpha: 128
+- Trained: {created_at}
+- vLLM compatible: yes
+
+## Usage
+Load this .dna block via the Clone.dna runtime or directly with PEFT:
+```python
+from peft import PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+model = AutoModelForCausalLM.from_pretrained("{base_model}", device_map="auto")
+model = PeftModel.from_pretrained(model, "{output_dir}")
+```
+"""
+    (out / "profile.md").write_text(profile_md)
 
     emit({
         "phase": "saving",

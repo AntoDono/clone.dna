@@ -106,12 +106,22 @@ const BADGE_COLOR: Record<string, string> = {
           class="text-xs border border-slate-700 text-slate-500 px-2 py-0.5"
         >{{ skill }}</span>
       </div>
-      <button
-        class="mt-3 w-full text-xs text-slate-500 border border-slate-700 py-1.5 hover:border-red-700 hover:text-red-400 transition-colors"
-        @click="emit('remove')"
-      >
-        Remove
-      </button>
+      <div class="mt-3 flex gap-2">
+        <a
+          v-if="slot.candidate.dna_cloned"
+          :href="`${useRuntimeConfig().public.apiBase}/registry/${teamId}/${slot.candidate.github_handle}/download`"
+          download
+          class="flex-1 text-xs text-green-400 border border-green-700 py-1.5 text-center hover:bg-green-950/40 transition-colors"
+        >
+          ↓ .dna
+        </a>
+        <button
+          class="flex-1 text-xs text-slate-500 border border-slate-700 py-1.5 hover:border-red-700 hover:text-red-400 transition-colors"
+          @click="emit('remove')"
+        >
+          Remove
+        </button>
+      </div>
     </div>
 
     <!-- EMPTY -->

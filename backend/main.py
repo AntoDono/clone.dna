@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import db, init_db
 from trainer import warmup_model
-from routes import teams_router, candidates_router, clone_dna_router, build_router
+from routes import teams_router, candidates_router, clone_dna_router, build_router, registry_router
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +40,7 @@ app.include_router(teams_router)
 app.include_router(candidates_router)
 app.include_router(clone_dna_router)
 app.include_router(build_router)
+app.include_router(registry_router)
 
 
 if __name__ == "__main__":

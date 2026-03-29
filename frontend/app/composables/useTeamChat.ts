@@ -107,12 +107,15 @@ export function useTeamChat(teamId: number, apiBase: string) {
     // Index of the assistant bubble in threads.value[key]; -1 = not yet created.
     // We always update via threads.value[key][idx] to keep Vue's reactivity working.
     let assistantIdx = -1
+    let buffer = ''
 
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      const chunk = decoder.decode(value)
-      for (const line of chunk.split('\n')) {
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop()!
+      for (const line of lines) {
         if (!line.startsWith('data: ')) continue
         try {
           const data = JSON.parse(line.slice(6))
@@ -200,6 +203,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     const decoder = new TextDecoder()
     let currentSpeaker: string | null = null
     let currentMsgIdx = -1
+    let orchBuffer = ''
 
     function getOrCreateBubbleIdx(speaker: string): number {
       if (currentSpeaker !== speaker) {
@@ -218,8 +222,10 @@ export function useTeamChat(teamId: number, apiBase: string) {
     while (true) {
       const { done, value } = await reader.read()
       if (done) break
-      const chunk = decoder.decode(value)
-      for (const line of chunk.split('\n')) {
+      orchBuffer += decoder.decode(value, { stream: true })
+      const lines = orchBuffer.split('\n')
+      orchBuffer = lines.pop()!
+      for (const line of lines) {
         if (!line.startsWith('data: ')) continue
         try {
           const data = JSON.parse(line.slice(6))

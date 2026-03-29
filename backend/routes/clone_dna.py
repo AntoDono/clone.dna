@@ -99,7 +99,7 @@ async def clone_dna_stream(team_id: int):
                     _save_grok_cache(handle, pairs, sys_prompt)
                     emit({"phase": "generating", "candidate": handle, "message": "Grok data cached for future runs"})
 
-                emit({"phase": "training", "candidate": handle, "message": "Waiting for GPU slot..."})
+                emit({"phase": "training", "candidate": handle, "message": "Waiting for training slot..."})
                 async with train_sem:
                     await asyncio.to_thread(train_lora, candidate, pairs, output_dir, emit)
 
@@ -122,6 +122,7 @@ async def clone_dna_stream(team_id: int):
 
         parallel_training = int(os.getenv("NUM_OF_PARALLEL_TRAINING", "1"))
         train_sem = asyncio.Semaphore(parallel_training)
+        logger.info("Starting clone-DNA for %d candidate(s) with parallelism=%d", len(candidates), parallel_training)
         tasks = [asyncio.create_task(process_candidate(c)) for c in candidates]
 
         remaining = len(candidates)
