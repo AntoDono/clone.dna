@@ -581,6 +581,22 @@ def train_lora(
     skills = candidate.get("skills", [])
     languages = candidate.get("languages", {})
 
+    # ── Version detection: bump semver if a prior block exists ────────────────
+    out_path = Path(output_dir)
+    prior_manifest_path = out_path / "manifest.json"
+    previous_version: str | None = None
+    block_version = "1.0.0"
+    if prior_manifest_path.exists():
+        try:
+            prior = json.loads(prior_manifest_path.read_text())
+            previous_version = prior.get("version", "1.0.0")
+            major, minor, patch = (int(x) for x in previous_version.split("."))
+            block_version = f"{major + 1}.0.0"
+            emit({"phase": "saving", "candidate": handle,
+                  "message": f"Updating block {previous_version} → {block_version}"})
+        except Exception:
+            block_version = "1.0.0"
+
     # Collect training loss history from the DirectEmitCallback via trainer state.
     # After trainer.train() the log_history is available on trainer.state — but
     # trainer/model are already deleted above.  We track losses in the callback instead.
@@ -610,7 +626,8 @@ def train_lora(
 
     manifest = {
         "name": f"{handle}-dna",
-        "version": "1.0.0",
+        "version": block_version,
+        "previous_version": previous_version,
         "type": "candidate_dna_block",
         "candidate": {
             "handle": handle,

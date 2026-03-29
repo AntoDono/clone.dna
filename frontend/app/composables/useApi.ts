@@ -72,6 +72,25 @@ export interface SearchResult {
   candidates: CandidateProfile[]
 }
 
+export interface CandidateFitScore {
+  handle: string
+  overall_score: number
+  technical_fit: number
+  domain_fit: number
+  seniority_match: number
+  reasoning: string
+  strengths: string[]
+  gaps: string[]
+  candidate: CandidateProfile | null
+}
+
+export interface FitScoreResponse {
+  job_description: string
+  role: string
+  total_scored: number
+  ranked: CandidateFitScore[]
+}
+
 /** Typed API client for all Clone.dna backend REST endpoints. Use within Nuxt component context. */
 export const useApi = () => {
   const config = useRuntimeConfig()
@@ -116,6 +135,12 @@ export const useApi = () => {
 
     clearHeadhuntCache: (teamId: number): Promise<void> =>
       $fetch(`${base}/teams/${teamId}/headhunt/cache`, { method: 'DELETE' }),
+
+    scoreHeadhuntCandidates: (teamId: number, jobDescription: string, role: string): Promise<FitScoreResponse> =>
+      $fetch(`${base}/teams/${teamId}/headhunt/score`, {
+        method: 'POST',
+        body: { job_description: jobDescription, role },
+      }),
 
     revokeBlock: (teamId: string, handle: string): Promise<{ status: string }> =>
       $fetch(`${base}/registry/${teamId}/${handle}`, { method: 'DELETE' }),
