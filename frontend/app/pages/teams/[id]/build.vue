@@ -42,11 +42,22 @@ function candidateOf(handle: string): CandidateProfile | undefined {
 
 const chat = useTeamChat(teamId, config.public.apiBase as string)
 
+function onGrokKeydown(e: KeyboardEvent) {
+  if (e.code === 'ShiftLeft' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    chat.toggleGrok()
+  }
+}
+
 onMounted(async () => {
   await fetchTeam()
   await chat.loadHistory(clonedCandidates.value.map(c => c.github_handle))
   const first = clonedCandidates.value[0]
   if (first) chat.setThread(first)
+  window.addEventListener('keydown', onGrokKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onGrokKeydown)
 })
 </script>
 
