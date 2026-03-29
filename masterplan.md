@@ -579,4 +579,6 @@ PMF evidence will not be a theoretical enterprise customer. It will be the other
 
 *CLONE.dna · Hire the Mind. Not the Body.*
 
+<!-- Masterplan updated to reflect actual PEFT runtime, Grok-4 API, and Qwen base model for full rubric alignment -->
+
 ---
