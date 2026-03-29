@@ -391,6 +391,75 @@ export function useTeamChat(teamId: number, apiBase: string) {
     }
   }
 
+  // ── Compare vs Base ───────────────────────────────────────────────────────
+
+  /** State for base-vs-adapter side-by-side comparison. */
+  const compareLoading = ref(false)
+  const compareBase = ref('')
+  const compareAdapter = ref('')
+  const compareError = ref('')
+  let compareAbort: AbortController | null = null
+
+  /**
+   * Stream a side-by-side base-model vs adapter comparison for the given handle
+   * and prompt. Populates compareBase / compareAdapter reactively as tokens arrive.
+   */
+  async function sendCompare(handle: string, prompt: string) {
+    compareBase.value = ''
+    compareAdapter.value = ''
+    compareError.value = ''
+    compareLoading.value = true
+    compareAbort = new AbortController()
+
+    try {
+      const token = import.meta.client ? (localStorage.getItem('auth_token') ?? '') : ''
+      const response = await fetch(`${apiBase}/teams/${teamId}/build/compare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ handle, prompt }),
+        signal: compareAbort.signal,
+      })
+
+      if (!response.ok) {
+        compareError.value = `Compare request failed (${response.status})`
+        return
+      }
+
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop()!
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const data = JSON.parse(line.slice(6))
+            if (data.token && data.source === 'base') compareBase.value += data.token
+            else if (data.token && data.source === 'adapter') compareAdapter.value += data.token
+            else if (data.done) break
+            else if (data.error) compareError.value = data.error
+          } catch { /* skip */ }
+        }
+      }
+    } catch (e: any) {
+      if (e.name !== 'AbortError') compareError.value = String(e)
+    } finally {
+      compareLoading.value = false
+      compareAbort = null
+    }
+  }
+
+  function stopCompare() {
+    compareAbort?.abort()
+    compareAbort = null
+    compareLoading.value = false
+  }
+
   return {
     activeThread,
     threads,
@@ -409,5 +478,11 @@ export function useTeamChat(teamId: number, apiBase: string) {
     sendMessage,
     stopStreaming,
     handleKeydown,
+    compareLoading,
+    compareBase,
+    compareAdapter,
+    compareError,
+    sendCompare,
+    stopCompare,
   }
 }
