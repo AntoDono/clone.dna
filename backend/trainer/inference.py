@@ -141,6 +141,11 @@ def _build_system_prompt(handle: str, name: str, role: str, profile: dict) -> st
         "You are part of a software team. Respond as this specific person — "
         "use their coding style, domain expertise, and communication patterns. "
         "Be concise, technical, and in character.",
+        "",
+        "You have access to tools. When the user asks you to create, write, read, edit, or delete files, "
+        "list directories, or run commands, you MUST use the appropriate tool by emitting a <tool_call> block. "
+        "NEVER just show code in a text response when the user asks you to create or modify a file — "
+        "always call the write_file or edit_file tool to actually make the change.",
     ]
     return "\n".join(l for l in lines if l or l == "")
 
@@ -167,7 +172,9 @@ def _format_prompt(tokenizer, messages: list[dict], tools: list[dict] | None = N
         kwargs["tools"] = tools
     try:
         return tokenizer.apply_chat_template(**kwargs)
-    except Exception:
+    except Exception as e:
+        if tools:
+            logger.warning("apply_chat_template failed WITH tools (%s) — retrying without", e)
         kwargs.pop("tools", None)
         return tokenizer.apply_chat_template(**kwargs)
 
@@ -241,6 +248,7 @@ def _generate_once(
     raw_output = ""
     in_think = False
     in_tool_call = False
+    in_suppressed = False
     tool_call_buf = ""
     captured_tool_calls: list[dict] = []
     buf = ""
@@ -249,7 +257,14 @@ def _generate_once(
     THINK_CLOSE = "</think>"
     TC_OPEN = "<tool_call>"
     TC_CLOSE = "</tool_call>"
-    MAX_TAG = max(len(THINK_OPEN), len(THINK_CLOSE), len(TC_OPEN), len(TC_CLOSE))
+    # Tags whose content should be silently dropped (model echoing template)
+    SUPPRESS_PAIRS = [
+        ("<tools>", "</tools>"),
+        ("<tool_response>", "</tool_response>"),
+    ]
+    ALL_OPEN_TAGS = [THINK_OPEN, TC_OPEN] + [p[0] for p in SUPPRESS_PAIRS]
+    MAX_TAG = max(len(t) for t in ALL_OPEN_TAGS + [THINK_CLOSE, TC_CLOSE] + [p[1] for p in SUPPRESS_PAIRS])
+    suppress_close = ""
 
     for token_text in streamer:
         if not token_text:
@@ -286,13 +301,21 @@ def _generate_once(
                     tool_call_buf += buf
                     buf = ""
                     break
+            elif in_suppressed:
+                idx = buf.find(suppress_close)
+                if idx >= 0:
+                    buf = buf[idx + len(suppress_close):]
+                    in_suppressed = False
+                    suppress_close = ""
+                else:
+                    if len(buf) > len(suppress_close):
+                        buf = buf[-(len(suppress_close) - 1):]
+                    break
             else:
-                think_idx = buf.find(THINK_OPEN)
-                tc_idx = buf.find(TC_OPEN)
-
                 first_tag_idx = -1
                 first_tag = None
-                for tag, idx in [(THINK_OPEN, think_idx), (TC_OPEN, tc_idx)]:
+                for tag in ALL_OPEN_TAGS:
+                    idx = buf.find(tag)
                     if idx >= 0 and (first_tag_idx == -1 or idx < first_tag_idx):
                         first_tag_idx = idx
                         first_tag = tag
@@ -319,12 +342,33 @@ def _generate_once(
                         buf = buf[len(TC_OPEN):]
                         in_tool_call = True
                         tool_call_buf = ""
+                    else:
+                        for open_tag, close_tag in SUPPRESS_PAIRS:
+                            if first_tag == open_tag:
+                                buf = buf[len(open_tag):]
+                                in_suppressed = True
+                                suppress_close = close_tag
+                                break
 
-    if buf and not in_think and not in_tool_call:
+    if buf and not in_think and not in_tool_call and not in_suppressed:
         visible_text += buf
         emit({"token": buf})
 
     gen_thread.join()
+
+    if not visible_text.strip() and not captured_tool_calls:
+        logger.warning(
+            "Generation produced no visible text and no tool calls. "
+            "raw_output (%d chars): %s",
+            len(raw_output),
+            raw_output[:500] or "(completely empty)",
+        )
+
+    logger.info(
+        "Generation done: %d visible chars, %d tool calls, %d raw chars",
+        len(visible_text), len(captured_tool_calls), len(raw_output),
+    )
+
     return visible_text, raw_output, captured_tool_calls
 
 
@@ -372,7 +416,7 @@ def agent_chat(
     emit: Callable[[dict], None],
     workspace_dir: str,
     tools: list[dict] | None = None,
-    max_new_tokens: int = 512,
+    max_new_tokens: int = 2048,
     system_prompt: str | None = None,
 ) -> str:
     """

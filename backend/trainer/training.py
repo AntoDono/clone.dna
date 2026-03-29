@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .tool_examples import TOOL_USE_EXAMPLES
+
 logger = logging.getLogger(__name__)
 
 BASE_INSTRUCT_RATIO = 0.5
@@ -113,7 +115,7 @@ def train_lora(
         lora_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
             r=32,
-            lora_alpha=64,
+            lora_alpha=128,
             lora_dropout=0.05,
             bias="none",
             target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
@@ -127,10 +129,19 @@ def train_lora(
         })
 
         def _format(pair: dict) -> str:
-            return (
-                f"### Instruction:\n{pair['instruction']}\n\n"
-                f"### Response:\n{pair['response']}\n"
-            )
+            messages = [
+                {"role": "user", "content": pair["instruction"]},
+                {"role": "assistant", "content": pair["response"]},
+            ]
+            try:
+                return tokenizer.apply_chat_template(
+                    messages, tokenize=False, add_generation_prompt=False,
+                )
+            except Exception:
+                return (
+                    f"### Instruction:\n{pair['instruction']}\n\n"
+                    f"### Response:\n{pair['response']}\n"
+                )
 
         MAX_LEN = 2048
 
@@ -148,13 +159,18 @@ def train_lora(
                 "candidate": handle,
                 "message": f"Mixing {len(base_pairs)} base instruct pairs with {len(pairs)} candidate pairs",
             })
-        all_pairs = pairs + base_pairs
+        all_pairs = pairs + base_pairs + TOOL_USE_EXAMPLES
+        emit({
+            "phase": "training",
+            "candidate": handle,
+            "message": f"Added {len(TOOL_USE_EXAMPLES)} tool-use training examples",
+        })
 
         raw_ds = Dataset.from_list(all_pairs)
         tokenized_ds = raw_ds.map(_tokenize, remove_columns=raw_ds.column_names)
 
         num_epochs = 2
-        batch_size = 4
+        batch_size = 2
         gradient_accumulation_steps = 4
         steps_per_epoch = max(1, math.ceil(len(tokenized_ds) / batch_size / gradient_accumulation_steps))
         total_steps = steps_per_epoch * num_epochs
