@@ -125,7 +125,7 @@ def score_headhunt_candidates(team_id: int, body: FitScoreRequest, current_user:
 
     Sends all candidate profiles to Grok in a single structured call — returns ranked
     scores per candidate across technical_fit, domain_fit, and seniority_match dimensions,
-    plus per-candidate strengths, gaps, and reasoning. Uses the team's in-memory headhunt
+    plus per-candidate strengths, gaps, and reasoning.     Uses the team's in-memory headhunt
     cache; call the headhunt stream first to populate candidates.
     """
     require_team_owner(team_id, current_user)

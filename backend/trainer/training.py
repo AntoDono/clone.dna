@@ -14,9 +14,11 @@ Pipeline
 Output (saved to output_dir/)
 ------------------------------
   manifest.json          — block metadata, vLLM compatibility, eval summary
-  eval.json              — training metrics: loss, pair counts, benchmark placeholder
+  eval.json              — training metrics: loss, pair counts, benchmarks, perplexity reduction
   sources.json           — full repo provenance (name, URL, language, stars)
-  consent.json           — opt-in record stub (pending registry enrollment)
+  consent.json           — opt-in record with source URLs and revocability flag
+  pairs.json             — candidate training pairs for RAG-DNA retrieval at inference time
+  teacher_config.json    — Grok prompt templates for reproducible pair regeneration
   profile.md             — human-readable candidate profile + PEFT usage snippet
   adapter_config.json    — PEFT LoRA config (auto-generated)
   adapter_model.safetensors — LoRA weights (load with PEFT or vLLM --enable-lora)
@@ -938,6 +940,18 @@ def train_lora(
     }
     with open(out / "sources.json", "w") as f:
         json.dump(sources, f, indent=2)
+
+    # pairs.json — candidate training pairs for RAG-DNA retrieval at inference time.
+    # Stored alongside adapter weights so the block is fully self-contained:
+    # parametric memory (weights) + retrieval corpus (pairs) in one directory.
+    # Only candidate-specific pairs are stored (not base instruct / tool-use pairs).
+    pairs_export = [
+        {"instruction": p.get("instruction", ""), "response": p.get("response", "")}
+        for p in pairs
+        if p.get("instruction") and p.get("response")
+    ]
+    with open(out / "pairs.json", "w") as f:
+        json.dump(pairs_export, f, indent=2)
 
     # teacher_config.json — prompt templates used for Grok pair generation
     teacher_config = {

@@ -294,8 +294,18 @@ def _build_system_prompt(
     role: str,
     profile: dict,
     workspace_dir: str | None = None,
+    lora_path: str | None = None,
+    user_query: str | None = None,
 ) -> str:
-    """Construct a full system prompt for a candidate agent, combining their persona and current workspace state."""
+    """Construct a full system prompt for a candidate agent.
+
+    When lora_path and user_query are provided, retrieves the most relevant
+    training pairs from pairs.json using BM25 and injects them as few-shot
+    examples before the tool instructions.  This gives the model both its
+    parametric (weights) and retrieved (examples) memory simultaneously.
+    """
+    from .retrieval import retrieve_context_pairs, format_retrieved_pairs
+
     skills = ", ".join((profile.get("skills") or [])[:6])
     bio = (profile.get("bio") or "").strip()
     languages = ", ".join(list((profile.get("languages") or {}).keys())[:4])
@@ -310,6 +320,20 @@ def _build_system_prompt(
         "You are part of a software team. Respond as this specific person — "
         "use their coding style, domain expertise, and communication patterns. "
         "Be concise, technical, and in character.",
+    ]
+
+    # RAG-DNA: inject retrieved examples from this developer's own training corpus.
+    # Retrieval is BM25 over pairs.json stored alongside adapter weights — no GPU needed.
+    if lora_path and user_query:
+        try:
+            retrieved = retrieve_context_pairs(lora_path, user_query, top_k=3)
+            example_block = format_retrieved_pairs(retrieved, max_chars=1200)
+            if example_block:
+                lines += ["", example_block]
+        except Exception:
+            pass  # retrieval failure is non-fatal; fall back to weights-only inference
+
+    lines += [
         "",
         "You have access to tools. To call a tool, emit a <tool_call> block with the JSON inside. "
         "Do NOT output tool calls as markdown code blocks or numbered steps — they will not execute. "
@@ -676,7 +700,15 @@ def agent_chat(
 
     if not system_prompt:
         name = profile.get("name") or adapter_name
-        system_prompt = _build_system_prompt(adapter_name, name, role, profile, workspace_dir)
+        # Extract the most recent user message for RAG retrieval
+        user_query = next(
+            (m.get("content", "") for m in reversed(history) if m.get("sender") == "user"),
+            None,
+        )
+        system_prompt = _build_system_prompt(
+            adapter_name, name, role, profile, workspace_dir,
+            lora_path=lora_path, user_query=user_query,
+        )
 
     messages = _history_to_openai(system_prompt, history)
     full_visible = ""

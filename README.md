@@ -398,6 +398,16 @@ Any developer can audit and revoke their DNA blocks at `GET /registry/developer/
 
 After every training run, `compute_perplexity_reduction()` evaluates the trained adapter on held-out code pairs (20% of training data, up to 8 samples). It computes actual token-level cross-entropy (NLL) under the adapter vs the base model, reporting `perplexity_reduction_ratio` (target > 1.0) and `nll_delta_bits`. This is written to `eval.json#benchmarks.perplexity_reduction` and to the manifest `eval_summary`. Unlike heuristic proxies, this directly measures adapter quality on the candidate's own code.
 
+### RAG-DNA: Retrieval-Augmented Inference
+
+Every `.dna` block ships with `pairs.json` — the candidate-specific training pairs stored alongside adapter weights. At inference time, `trainer/retrieval.py` implements a BM25-lite retriever (unigram + bigram TF-IDF, no external dependencies) that finds the most relevant code examples from the block's own corpus for the current query. These are injected as few-shot examples into the system prompt before the tool instructions.
+
+This gives the DNA block a **dual memory**: parametric (fine-tuned LoRA weights encoding the developer's style) and retrieved (the exact code examples most relevant to the task). The retrieval is keyed to the user's last message and runs in O(n × |query tokens|) over the in-memory BM25 index — negligible overhead at inference time.
+
+### Shared Route Utilities
+
+`backend/routes/utils.py` provides `get_team_or_404()`, `get_block_dir()`, `sse()`, `read_json_file()`, and `require_json_file()` — eliminating repeated try/except boilerplate and inconsistent error responses across all five route modules.
+
 ### Style Consistency — Sigmoid-Smoothed Scoring
 
 The `compute_style_metrics()` function was updated from a linear CV penalty to a sigmoid-smoothed model: `score = 1 / (1 + exp(6 × (cv − 0.5)))`. This preserves the signal shape (high consistency → high score) while correctly scoring professional code that has moderate but expected variance — targeting 0.85+ for typical open-source developers.
