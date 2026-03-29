@@ -54,13 +54,13 @@ async function fetchTeam() {
   finally { loading.value = false }
 }
 
-async function scanSlot(slotId: number) {
+async function scanSlot(slotId: number, force = false) {
   activeSlotId.value = slotId
   isSearching.value = true
   searchResults.value = null
   searchError.value = ''
   try {
-    searchResults.value = await api.searchCandidates(teamId, slotId)
+    searchResults.value = await api.searchCandidates(teamId, slotId, force)
   } catch {
     searchError.value = 'GitHub scan failed. Check GITHUB_TOKEN and backend.'
   } finally {
@@ -209,12 +209,20 @@ onMounted(fetchTeam)
                 for {{ ROLE_META[searchResults.role]?.label }}
               </span>
             </h2>
-            <button
-              class="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 px-3 py-1 transition-colors"
-              @click="searchResults = null; activeSlotId = null"
-            >
-              Close
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                class="text-sm text-blue-500 hover:text-blue-300 border border-blue-800 px-3 py-1 transition-colors"
+                @click="scanSlot(activeSlotId!, true)"
+              >
+                Rescan
+              </button>
+              <button
+                class="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 px-3 py-1 transition-colors"
+                @click="searchResults = null; activeSlotId = null"
+              >
+                Close
+              </button>
+            </div>
           </div>
           <CandidateSearch
             :candidates="searchResults.candidates"

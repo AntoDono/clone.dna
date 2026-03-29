@@ -74,8 +74,8 @@ export const useApi = () => {
     deleteTeam: (id: number): Promise<void> =>
       $fetch(`${base}/teams/${id}`, { method: 'DELETE' }),
 
-    searchCandidates: (teamId: number, slotId: number): Promise<SearchResult> =>
-      $fetch(`${base}/teams/${teamId}/roles/${slotId}/search`),
+    searchCandidates: (teamId: number, slotId: number, force = false): Promise<SearchResult> =>
+      $fetch(`${base}/teams/${teamId}/roles/${slotId}/search${force ? '?force=true' : ''}`),
 
     selectCandidate: (teamId: number, slotId: number, github_handle: string): Promise<CandidateProfile> =>
       $fetch(`${base}/teams/${teamId}/roles/${slotId}/select`, {
