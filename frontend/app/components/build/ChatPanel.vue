@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import { marked } from 'marked'
 import type { CandidateProfile, ChatMessage } from '~/composables/useApi'
 import type { ActiveThread } from '~/composables/useTeamChat'
+
+marked.setOptions({ breaks: true, gfm: true })
 
 const props = defineProps<{
   activeThread: ActiveThread | null
@@ -38,6 +41,40 @@ interface ContentSegment {
   data: string | Record<string, any>
 }
 
+const KNOWN_COMMANDS = new Set([
+  'run_command', 'write_file', 'read_file', 'create_folder', 'list_files', 'edit_file',
+])
+
+function tryExtractJsonCommand(text: string): ContentSegment[] {
+  const segments: ContentSegment[] = []
+  const jsonPattern = /```(?:json)?\s*\n?\s*(\{[\s\S]*?\})\s*\n?\s*```|\{[\t ]*"name"[\t ]*:[\t ]*"[^"]+?"[\t ]*,[\t ]*"arguments"[\t ]*:[\t ]*\{[\s\S]*?\}\s*\}/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+
+  while ((match = jsonPattern.exec(text)) !== null) {
+    const raw = match[1] ?? match[0]
+    try {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed.name === 'string' && KNOWN_COMMANDS.has(parsed.name) && parsed.arguments) {
+        if (match.index > lastIndex) {
+          const before = text.slice(lastIndex, match.index).replace(/^\n+|\n+$/g, '')
+          if (before.trim()) segments.push({ type: 'text', data: before })
+        }
+        segments.push({ type: 'tool_call', data: parsed })
+        lastIndex = match.index + match[0].length
+      }
+    } catch { /* not valid JSON, leave as text */ }
+  }
+
+  if (segments.length === 0) return [{ type: 'text', data: text }]
+
+  if (lastIndex < text.length) {
+    const after = text.slice(lastIndex).replace(/^\n+/, '')
+    if (after.trim()) segments.push({ type: 'text', data: after })
+  }
+  return segments
+}
+
 function parseMessageContent(content: string): ContentSegment[] {
   const segments: ContentSegment[] = []
   const regex = /\[\[(TOOL_CALL|TOOL_RESULT):(.*?)\]\]/gs
@@ -47,7 +84,7 @@ function parseMessageContent(content: string): ContentSegment[] {
   while ((match = regex.exec(content)) !== null) {
     if (match.index > lastIndex) {
       const text = content.slice(lastIndex, match.index).replace(/^\n+|\n+$/g, '')
-      if (text) segments.push({ type: 'text', data: text })
+      if (text) segments.push(...tryExtractJsonCommand(text))
     }
     try {
       const parsed = JSON.parse(match[2])
@@ -60,10 +97,14 @@ function parseMessageContent(content: string): ContentSegment[] {
 
   if (lastIndex < content.length) {
     const text = content.slice(lastIndex).replace(/^\n+/, '')
-    if (text) segments.push({ type: 'text', data: text })
+    if (text) segments.push(...tryExtractJsonCommand(text))
   }
 
   return segments
+}
+
+function renderMarkdown(text: string): string {
+  return marked.parse(text, { async: false }) as string
 }
 
 function truncate(s: string, max: number = 120): string {
@@ -188,7 +229,7 @@ const inputModel = computed({
               <template v-if="isUserMsg(msg)">{{ msg.content }}</template>
               <template v-else>
                 <template v-for="(seg, sIdx) in parseMessageContent(msg.content)" :key="sIdx">
-                  <span v-if="seg.type === 'text'" class="whitespace-pre-wrap">{{ seg.data }}</span>
+                  <div v-if="seg.type === 'text'" class="prose-chat" v-html="renderMarkdown(seg.data as string)"></div>
 
                   <div v-else-if="seg.type === 'tool_call'" class="my-2 bg-slate-950 border border-slate-700 text-xs font-mono overflow-hidden">
                     <div class="flex items-center gap-2 px-3 py-1.5 border-b border-slate-800 bg-slate-900/60">
@@ -294,5 +335,110 @@ const inputModel = computed({
 .msg-enter-from {
   opacity: 0;
   transform: translateY(6px);
+}
+
+/* Markdown prose styling for chat bubbles */
+.prose-chat :deep(p) {
+  margin: 0.25em 0;
+}
+.prose-chat :deep(p:first-child) {
+  margin-top: 0;
+}
+.prose-chat :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.prose-chat :deep(h1),
+.prose-chat :deep(h2),
+.prose-chat :deep(h3),
+.prose-chat :deep(h4) {
+  color: #e2e8f0;
+  font-weight: 600;
+  margin: 0.6em 0 0.3em;
+}
+.prose-chat :deep(h1) { font-size: 1.2em; }
+.prose-chat :deep(h2) { font-size: 1.1em; }
+.prose-chat :deep(h3) { font-size: 1.05em; }
+.prose-chat :deep(strong) {
+  color: #e2e8f0;
+  font-weight: 600;
+}
+.prose-chat :deep(em) {
+  font-style: italic;
+}
+.prose-chat :deep(a) {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.prose-chat :deep(a:hover) {
+  color: #93bbfd;
+}
+.prose-chat :deep(code) {
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  font-size: 0.88em;
+  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
+  color: #93c5fd;
+}
+.prose-chat :deep(pre) {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  padding: 0.75em 1em;
+  margin: 0.5em 0;
+  overflow-x: auto;
+  font-size: 0.85em;
+}
+.prose-chat :deep(pre code) {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #cbd5e1;
+}
+.prose-chat :deep(ul),
+.prose-chat :deep(ol) {
+  margin: 0.4em 0;
+  padding-left: 1.5em;
+}
+.prose-chat :deep(ul) {
+  list-style-type: disc;
+}
+.prose-chat :deep(ol) {
+  list-style-type: decimal;
+}
+.prose-chat :deep(li) {
+  margin: 0.15em 0;
+}
+.prose-chat :deep(li p) {
+  margin: 0;
+}
+.prose-chat :deep(blockquote) {
+  border-left: 3px solid #475569;
+  padding-left: 0.75em;
+  margin: 0.4em 0;
+  color: #94a3b8;
+}
+.prose-chat :deep(hr) {
+  border: none;
+  border-top: 1px solid rgba(100, 116, 139, 0.3);
+  margin: 0.6em 0;
+}
+.prose-chat :deep(table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.5em 0;
+  font-size: 0.9em;
+}
+.prose-chat :deep(th),
+.prose-chat :deep(td) {
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  padding: 0.35em 0.6em;
+  text-align: left;
+}
+.prose-chat :deep(th) {
+  background: rgba(0, 0, 0, 0.25);
+  color: #e2e8f0;
+  font-weight: 600;
 }
 </style>
