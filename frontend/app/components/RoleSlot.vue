@@ -225,6 +225,8 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
   flex-direction: column;
   gap: 12px;
   transition: border-color 0.15s, box-shadow 0.15s;
+  border-color: var(--border-mid) !important;
+  box-shadow: var(--shadow-sm);
 }
 .slot-card--filled { border-color: #86EFAC !important; }
 .slot-card--active { border-color: #93C5FD !important; }
@@ -258,26 +260,31 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-top: 10px;
-  border-top: 1px solid #E2DDD6;
+  margin-top: 2px;
+  padding: 12px;
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 .candidate-header { display: flex; gap: 10px; align-items: flex-start; }
 .candidate-avatar {
   width: 32px;
   height: 32px;
-  border: 1px solid #E2DDD6;
+  border: 1px solid var(--border-mid);
   object-fit: cover;
   flex-shrink: 0;
   border-radius: 2px;
 }
 .candidate-avatar--fallback {
-  background: #F3F0EB;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-mid);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 13px;
   font-weight: 600;
-  color: #6B6050;
+  color: var(--text-secondary);
   border-radius: 2px;
 }
 .candidate-info { min-width: 0; }

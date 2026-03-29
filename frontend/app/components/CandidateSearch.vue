@@ -85,9 +85,18 @@ function select(candidate: CandidateProfile) {
 
 .cs-item {
   overflow: hidden;
-  transition: border-color 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  border-color: var(--border-mid) !important;
+  box-shadow: var(--shadow-sm);
 }
-.cs-item--open { border-color: #93C5FD !important; }
+.cs-item:hover {
+  border-color: var(--border-mid) !important;
+  box-shadow: var(--shadow-md);
+}
+.cs-item--open {
+  border-color: #60a5fa !important;
+  box-shadow: var(--shadow-md);
+}
 
 .cs-header {
   width: 100%;
@@ -101,7 +110,7 @@ function select(candidate: CandidateProfile) {
   cursor: pointer;
   transition: background 0.12s;
 }
-.cs-header:hover { background: #FAF8F4; }
+.cs-header:hover { background: var(--bg-subtle); }
 
 .cs-tree { flex: 1; }
 .cs-chevron { font-size: 10px; color: #A8A098; margin-top: 2px; flex-shrink: 0; }

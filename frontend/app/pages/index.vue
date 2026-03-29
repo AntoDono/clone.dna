@@ -291,15 +291,16 @@ onMounted(() => {
   align-items: flex-start;
   gap: 0;
   margin-top: 56px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-mid);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
 }
 .pipeline-step {
   flex: 1;
   padding: 20px 20px 20px 24px;
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--border-mid);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -385,8 +386,18 @@ onMounted(() => {
   flex-direction: column;
   gap: 14px;
   transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  border-color: var(--border-mid) !important;
+  box-shadow: var(--shadow-sm);
 }
-.team-card:hover { transform: translateY(-1px); }
+.team-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-mid) !important;
+  box-shadow: var(--shadow-md);
+}
+.team-slots .pill:not(.pill-green):not(.pill-amber) {
+  border-color: var(--border-mid);
+  background: var(--bg-card);
+}
 .team-card-header {
   display: flex;
   justify-content: space-between;
