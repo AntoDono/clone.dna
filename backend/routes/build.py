@@ -23,6 +23,7 @@ from pydantic import BaseModel as PydanticModel
 
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage
+from routes.utils import get_team_or_404, sse as _sse_line
 from trainer import agent_chat, compare_generation, grok_chat
 from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
@@ -101,7 +102,7 @@ def _get_candidate_for_team(team_id: int, handle: str) -> Candidate:
 
 def _sse(data: dict) -> str:
     """Format a dict as an SSE data line for StreamingResponse."""
-    return f"data: {json.dumps(data)}\n\n"
+    return _sse_line(data)
 
 
 # ── Get message history ───────────────────────────────────────────────────────
@@ -109,10 +110,7 @@ def _sse(data: dict) -> str:
 @router.get("/teams/{team_id}/build/messages")
 def get_build_messages(team_id: int, thread: str):
     """Return full message history for a team's build workspace, optionally filtered by thread."""
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    get_team_or_404(team_id)
     msgs = (
         ChatMessage
         .select()
@@ -125,10 +123,7 @@ def get_build_messages(team_id: int, thread: str):
 @router.get("/teams/{team_id}/build/artifacts")
 def get_build_artifacts(team_id: int):
     """Return the latest orchestration artifact and recent tool audit entries for a team workspace."""
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    get_team_or_404(team_id)
 
     meta_dir = _workspace_meta_dir(team_id)
     latest_orchestration_path = meta_dir / "latest_orchestration.json"
@@ -136,17 +131,23 @@ def get_build_artifacts(team_id: int):
 
     latest_orchestration = None
     if latest_orchestration_path.exists():
-        latest_orchestration = json.loads(latest_orchestration_path.read_text(encoding="utf-8"))
+        try:
+            latest_orchestration = json.loads(latest_orchestration_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            latest_orchestration = None
 
     audit_events: list[dict] = []
     if audit_path.exists():
-        for line in audit_path.read_text(encoding="utf-8").splitlines()[-50:]:
-            if not line.strip():
-                continue
-            try:
-                audit_events.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+        try:
+            for line in audit_path.read_text(encoding="utf-8").splitlines()[-50:]:
+                if not line.strip():
+                    continue
+                try:
+                    audit_events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        except OSError:
+            pass
 
     return {
         "workspace": _workspace_for_team(team_id),
@@ -160,10 +161,7 @@ def get_build_artifacts(team_id: int):
 @router.post("/teams/{team_id}/build/chat")
 async def build_chat(team_id: int, body: BuildChatRequest):
     """Stream a direct message to a cloned candidate using their LoRA adapter and the tool-use agent loop."""
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    get_team_or_404(team_id)
 
     candidate = _get_candidate_for_team(team_id, body.handle)
     if not candidate.dna_cloned:
@@ -260,10 +258,7 @@ async def build_compare(team_id: int, body: BuildCompareRequest):
     Streams SSE events with {"source": "adapter"|"base", "token": "..."} so the
     frontend can display both responses side-by-side.
     """
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    get_team_or_404(team_id)
 
     candidate = _get_candidate_for_team(team_id, body.handle)
     if not candidate.dna_cloned:
@@ -322,10 +317,7 @@ async def build_compare(team_id: int, body: BuildCompareRequest):
 @router.post("/teams/{team_id}/build/orchestrate")
 async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
     """Stream PM orchestration: PM generates a plan, Grok assigns tasks to specialists, each specialist responds sequentially."""
-    try:
-        team = Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    team = get_team_or_404(team_id)
 
     cloned: list[Candidate] = []
     pm_candidate: Candidate | None = None

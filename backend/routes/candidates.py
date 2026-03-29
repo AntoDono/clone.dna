@@ -25,6 +25,7 @@ from pydantic import BaseModel as PydanticModel
 
 from db import db
 from models import Team, RoleSlot, Candidate
+from routes.utils import get_team_or_404
 from extractor import (
     search_candidates,
     search_users_raw,
@@ -61,10 +62,7 @@ class FitScoreRequest(PydanticModel):
 @router.get("/teams/{team_id}/headhunt/stream")
 async def headhunt_stream(team_id: int, force: bool = Query(False)):
     """Stream GitHub headhunt results over SSE: searches by role, builds profiles, caches results per team. Accepts force=true to bypass cache."""
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    get_team_or_404(team_id)
 
     async def generator():
         if not force and team_id in _headhunt_cache:
@@ -126,13 +124,10 @@ def score_headhunt_candidates(team_id: int, body: FitScoreRequest):
 
     Sends all candidate profiles to Grok in a single structured call — returns ranked
     scores per candidate across technical_fit, domain_fit, and seniority_match dimensions,
-    plus per-candidate strengths, gaps, and reasoning. Uses the team's in-memory headhunt
+    plus per-candidate strengths, gaps, and reasoning.     Uses the team's in-memory headhunt
     cache; call the headhunt stream first to populate candidates.
     """
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    get_team_or_404(team_id)
 
     cached = _headhunt_cache.get(team_id, [])
     candidates = [event["candidate"] for event in cached if "candidate" in event]
