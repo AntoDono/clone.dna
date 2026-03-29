@@ -212,7 +212,7 @@ def search_role(team_id: int, slot_id: int, force: bool = Query(False), current_
     key = (team_id, slot_id)
     if not force and key in _search_cache:
         return _search_cache[key]
-    candidates = search_candidates(slot.role, limit=5, force=force)
+    candidates = search_candidates(slot.role, limit=10, force=force)
     result = {"role": slot.role, "slot_id": slot_id, "candidates": candidates}
     _search_cache[key] = result
     return result

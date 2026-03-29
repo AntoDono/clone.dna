@@ -170,7 +170,7 @@ def _get(url: str, params: Optional[dict] = None) -> Optional[dict | list]:
 
 # ── Core functions ────────────────────────────────────────────────────────────
 
-def search_users_raw(role: str, limit: int = 5) -> list[str]:
+def search_users_raw(role: str, limit: int = 10) -> list[str]:
     """Return a list of GitHub login handles for a given role without building full profiles."""
     query = ROLE_QUERIES.get(role, f"{role} developer in:bio")
     data = _get(
@@ -182,7 +182,7 @@ def search_users_raw(role: str, limit: int = 5) -> list[str]:
     return [user["login"] for user in data.get("items", [])[:limit]]
 
 
-def search_candidates(role: str, limit: int = 5, force: bool = False) -> list[dict]:
+def search_candidates(role: str, limit: int = 10, force: bool = False) -> list[dict]:
     """Search GitHub for candidates by role and build full profiles for each handle. Expensive — fetches repos and languages per candidate."""
     query = ROLE_QUERIES.get(role, f"{role} developer in:bio")
     data = _get(

@@ -316,7 +316,7 @@ onUnmounted(() => es?.close())
               <p class="text-[var(--text-muted)] text-xs mt-0.5">{{ role.label }}</p>
             </div>
             <span class="text-xs tabular-nums text-[var(--text-secondary)]">
-              {{ (pool[role.key] ?? []).length }}<span class="text-[var(--text-muted)]">/5</span>
+              {{ (pool[role.key] ?? []).length }}<span class="text-[var(--text-muted)]">/10</span>
             </span>
           </div>
           <!-- Progress bar -->
@@ -328,7 +328,7 @@ onUnmounted(() => es?.close())
                 'bg-blue-500': role.key === 'swe',
                 'bg-purple-500': role.key === 'designer',
               }"
-              :style="{ width: `${(pool[role.key] ?? []).length * 20}%` }"
+              :style="{ width: `${(pool[role.key] ?? []).length * 10}%` }"
             ></div>
           </div>
         </div>
@@ -413,7 +413,7 @@ onUnmounted(() => es?.close())
           <!-- Skeleton placeholders while hunting -->
           <div v-if="phase === 'hunting'" class="space-y-2 mt-2">
             <div
-              v-for="i in Math.max(0, 5 - (pool[role.key] ?? []).length)"
+              v-for="i in Math.max(0, 10 - (pool[role.key] ?? []).length)"
               :key="`sk-${i}`"
               class="h-11 border border-[var(--border)] bg-[var(--bg-subtle)] rounded animate-pulse"
             ></div>

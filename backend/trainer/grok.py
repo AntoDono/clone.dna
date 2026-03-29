@@ -390,6 +390,7 @@ def grok_chat(
     full_visible = ""
 
     for iteration in range(MAX_GROK_TOOL_ITERATIONS):
+        emit({"thinking": True})
         try:
             stream = client.chat.completions.create(
                 model=GROK_CHAT_MODEL,
@@ -399,17 +400,30 @@ def grok_chat(
                 stream=True,
             )
         except Exception as e:
+            emit({"thinking": False})
             emit({"error": f"Grok API error: {e}"})
             break
 
         visible = ""
+        first_token = True
+        _DELEGATE_TAG_RE = re.compile(r'\s*</?(?:no_)?delegate\s*/?>\s*', re.IGNORECASE)
         for chunk in stream:
             delta = chunk.choices[0].delta if chunk.choices else None
-            if delta and delta.content:
-                token = delta.content
-                visible += token
-                full_visible += token
-                emit({"token": token})
+            if delta:
+                # Reasoning model emits thinking tokens in reasoning_content before visible content.
+                # Keep the thinking indicator alive during that phase.
+                if not delta.content and getattr(delta, "reasoning_content", None):
+                    emit({"thinking": True})
+                if delta.content:
+                    if first_token:
+                        emit({"thinking": False})
+                        first_token = False
+                    token = delta.content
+                    visible += token
+                    full_visible += token
+                    clean = _DELEGATE_TAG_RE.sub('', token)
+                    if clean:
+                        emit({"token": clean})
 
         tool_calls = _extract_tool_calls_from_text(visible)
         if not tool_calls:

@@ -257,6 +257,15 @@ async def run_orchestrate(team: Team, user_text: str, channel: discord.DMChannel
         channel, f"@{lead_handle} (PM)", lead, pm_history, workspace,
     )
 
+    # Strip delegation tag from PM text before saving/displaying
+    wants_delegate = True
+    if pm_text:
+        if "[NO_DELEGATE]" in pm_text:
+            wants_delegate = False
+            pm_text = pm_text.replace("[NO_DELEGATE]", "").rstrip()
+        elif "[DELEGATE]" in pm_text:
+            pm_text = pm_text.replace("[DELEGATE]", "").rstrip()
+
     if pm_text:
         with db.atomic():
             ChatMessage.create(
@@ -266,9 +275,11 @@ async def run_orchestrate(team: Team, user_text: str, channel: discord.DMChannel
 
     # ── Assign tasks ─────────────────────────────────────────────────────
     specialists = [c for c in cloned if c.github_handle != lead_handle]
-    assignments = await asyncio.to_thread(
-        assign_tasks, pm_text, specialists, user_text, workspace,
-    )
+    assignments: list[dict] = []
+    if wants_delegate and specialists:
+        assignments = await asyncio.to_thread(
+            assign_tasks, pm_text, specialists, user_text, workspace,
+        )
 
     # ── Specialist phases ────────────────────────────────────────────────
     handle_map = {c.github_handle: c for c in specialists}

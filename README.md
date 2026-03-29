@@ -14,7 +14,7 @@ From a Discord DM you can spin up the entire team. Describe what you want to shi
 
 > Built at the [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com) · Providence, RI · March 28–29, 2026
 >
-> **Live demo:** [yconai.antodono.com](https://yconai.antodono.com)
+> **Live demo:** [ycon.antodono.com](https://ycon.antodono.com)
 
 ---
 
@@ -459,6 +459,6 @@ A `.dna` block is an executable benchmark of a developer's coding patterns, not 
 
 ---
 
-**Deployment:** [yconai.antodono.com](https://yconai.antodono.com)
+**Deployment:** [ycon.antodono.com](https://ycon.antodono.com)
 
 *CLONE.dna · [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com)*

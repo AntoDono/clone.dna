@@ -14,6 +14,7 @@ import asyncio
 import datetime as dt
 import json
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -467,7 +468,9 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest, current
             if att:
                 yield _sse({"speaker": ev.get("speaker"), "attachment": att})
 
-        pm_response = pm_tokens[0] if pm_tokens else ""
+        _DELEGATE_TAG_RE = re.compile(r'\s*</?(?:no_)?delegate\s*/?>\s*', re.IGNORECASE)
+        _wants_delegate = bool(re.search(r'<delegate\s*/>', pm_tokens[0] if pm_tokens else '', re.IGNORECASE))
+        pm_response = _DELEGATE_TAG_RE.sub('', pm_tokens[0] if pm_tokens else '').strip()
         run_record["pm_response"] = pm_response
         if pm_response:
             with db.atomic():
@@ -478,9 +481,17 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest, current
 
         # ── Step 2: Grok assigns tasks to specialists ─────────────────────────
         specialists = [c for c in cloned if c.github_handle != lead_handle]
-        assignments = await asyncio.to_thread(
-            assign_tasks, pm_response, specialists, body.prompt, workspace
-        )
+        assignments: list[dict] = []
+        if _wants_delegate and specialists:
+            yield _sse({"thinking": True, "phase": "assigning"})
+            try:
+                assignments = await asyncio.to_thread(
+                    assign_tasks, pm_response, specialists, body.prompt, workspace
+                )
+            except RuntimeError as exc:
+                yield _sse({"phase": "error", "error": str(exc), "detail": "Specialist delegation failed; PM response was saved but no specialist tasks were run."})
+                yield _sse({"done": True})
+                return
         run_record["assignments"] = assignments
 
         # ── Step 3: Each specialist responds ─────────────────────────────────
@@ -493,7 +504,7 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest, current
                 continue
 
             spec_tokens: list[str] = []
-            yield _sse({"phase": "specialist", "speaker": spec_handle, "task": task})
+            yield _sse({"thinking": True, "phase": "specialist", "speaker": spec_handle, "task": task})
 
             def run_spec(s=spec, sh=spec_handle, sr=spec.role_slot.role,
                          hist=[{"sender": "user", "content": task}], toks=spec_tokens,

@@ -49,6 +49,9 @@ def build_pm_prompt(user_text: str, team_members: list, workspace_dir: str | Non
         f"{ws_context}\n"
         "Use your tools yourself for anything straightforward. "
         "Only assign work to specialists when their specific expertise is truly required.\n\n"
+        "IMPORTANT: At the very end of your response, append exactly one of these XML tags on its own line:\n"
+        "  <no_delegate/> — if you handled this yourself and no specialist needs to act\n"
+        "  <delegate/> — if specialists genuinely have work to do\n\n"
         f"User request: {user_text}"
     )
 
@@ -109,5 +112,5 @@ def assign_tasks(
         logger.info("assign_tasks: Grok assigned %d tasks (of %d specialists)", len(assignments), len(specialists))
         return assignments
     except Exception as exc:
-        logger.warning("assign_tasks: Grok call failed (%s) — falling back to broadcast", exc)
-        return [{"handle": s.github_handle, "task": fallback_prompt} for s in specialists]
+        logger.error("assign_tasks: Grok call failed — specialist delegation aborted", exc_info=True)
+        raise RuntimeError(f"Specialist delegation failed: {exc}") from exc

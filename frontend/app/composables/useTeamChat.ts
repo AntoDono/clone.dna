@@ -203,7 +203,8 @@ export function useTeamChat(teamId: number, apiBase: string) {
                 })
                 assistantIdx = threads.value[key].length - 1
               }
-              threads.value[key]![assistantIdx]!.content += data.token
+              const raw = threads.value[key]![assistantIdx]!.content + data.token
+              threads.value[key]![assistantIdx]!.content = raw.replace(/\s*<\/?(?:no_)?delegate\s*\/?>\s*/gi, '')
               scrollToBottom()
             } else if (data.tool_call) {
               if (assistantIdx === -1) {
@@ -272,7 +273,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     const key = 'orchestrate'
     streaming.value = true
     streamingHandle.value = key
-    isThinking.value = false
+    isThinking.value = true
     abortController = new AbortController()
 
     pushMessage(key, {
@@ -337,14 +338,29 @@ export function useTeamChat(teamId: number, apiBase: string) {
           if (!line.startsWith('data: ')) continue
           try {
             const data = JSON.parse(line.slice(6))
-            if (data.done) break
-            if (data.phase === 'specialist') {
+            if (data.done) { isThinking.value = false; break }
+            if (data.thinking === true) { isThinking.value = true; continue }
+            if (data.thinking === false) { isThinking.value = false; continue }
+            if (data.phase === 'error' || (data.error && !data.speaker)) {
+              isThinking.value = false
+              if (!threads.value[key]) threads.value[key] = []
+              threads.value[key].push({
+                id: Date.now() + Math.random(), thread: key,
+                sender: key, content: `[Error: ${data.error}]`,
+                created_at: new Date().toISOString(),
+              })
+              scrollToBottom()
+              break
+            }
+            if (data.phase === 'specialist' || data.phase === 'assigning') {
               currentSpeaker = null
               continue
             }
             if (data.speaker && data.token) {
+              isThinking.value = false
               const idx = getOrCreateBubbleIdx(data.speaker)
-              threads.value[key]![idx]!.content += data.token
+              const raw = threads.value[key]![idx]!.content + data.token
+              threads.value[key]![idx]!.content = raw.replace(/\s*<\/?(?:no_)?delegate\s*\/?>\s*/gi, '')
               scrollToBottom()
             } else if (data.speaker && data.tool_call) {
               const idx = getOrCreateBubbleIdx(data.speaker)
