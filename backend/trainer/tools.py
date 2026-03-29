@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import logging
 import os
+import shlex
 import subprocess
+import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _DNAS_ROOT = Path(os.getenv("DNAS_DIR", "dnas"))
+_AUDIT_DIR_NAME = ".clone_dna"
+_AUDIT_LOG_NAME = "tool_audit.jsonl"
 
 TOOL_SCHEMAS = [
     {
@@ -125,6 +130,39 @@ TOOL_SCHEMAS = [
 ]
 
 COMMAND_TIMEOUT = 30
+_BLOCKED_COMMAND_PREFIXES = {
+    "curl",
+    "wget",
+    "nc",
+    "netcat",
+    "ssh",
+    "scp",
+    "sftp",
+    "ftp",
+    "telnet",
+    "sudo",
+    "su",
+    "rm",
+    "dd",
+    "mkfs",
+    "shutdown",
+    "reboot",
+    "halt",
+    "poweroff",
+    "launchctl",
+}
+_BLOCKED_COMMAND_TOKENS = {
+    "&&",
+    "||",
+    ";",
+    "|",
+    ">",
+    ">>",
+    "<",
+    "<<",
+    "$(",
+    "`",
+}
 
 
 def _safe_path(workspace: Path, relative: str) -> Path:
@@ -134,6 +172,23 @@ def _safe_path(workspace: Path, relative: str) -> Path:
     if not str(resolved).startswith(str(ws_resolved)):
         raise PermissionError(f"Path escapes workspace: {relative}")
     return resolved
+
+
+def _audit_path(workspace: Path) -> Path:
+    """Return the workspace-local JSONL file used to audit tool execution."""
+    audit_dir = workspace / _AUDIT_DIR_NAME
+    audit_dir.mkdir(parents=True, exist_ok=True)
+    return audit_dir / _AUDIT_LOG_NAME
+
+
+def _append_audit_event(workspace: Path, event: dict) -> None:
+    """Append a single JSONL audit record; failures are logged but not raised."""
+    try:
+        path = _audit_path(workspace)
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(event, ensure_ascii=True) + "\n")
+    except Exception as exc:
+        logger.warning("Failed to append tool audit event: %s", exc)
 
 
 def _exec_write_file(workspace: Path, args: dict) -> str:
@@ -194,12 +249,28 @@ def _exec_edit_file(workspace: Path, args: dict) -> str:
 
 
 def _exec_run_command(workspace: Path, args: dict) -> str:
-    """Execute a shell command in the workspace directory with a 30-second timeout, capturing stdout and stderr."""
+    """Execute a workspace-local command with basic sandbox policy enforcement."""
     command = args["command"]
     try:
+        command = command.strip()
+        if not command:
+            return "Error: command is empty"
+        if any(token in command for token in _BLOCKED_COMMAND_TOKENS):
+            raise PermissionError(
+                "Command policy violation: shell metacharacters are blocked; "
+                "run a single command without pipes, redirects, or chaining"
+            )
+
+        argv = shlex.split(command)
+        if not argv:
+            return "Error: command is empty"
+        root = Path(argv[0]).name.lower()
+        if root in _BLOCKED_COMMAND_PREFIXES:
+            raise PermissionError(f"Command policy violation: command '{root}' is blocked by the workspace sandbox policy")
+
         result = subprocess.run(
-            command,
-            shell=True,
+            argv,
+            shell=False,
             cwd=str(workspace.resolve()),
             capture_output=True,
             text=True,
@@ -217,6 +288,8 @@ def _exec_run_command(workspace: Path, args: dict) -> str:
         return output
     except subprocess.TimeoutExpired:
         return f"Error: command timed out after {COMMAND_TIMEOUT}s"
+    except PermissionError:
+        raise
     except Exception as e:
         return f"Error: {e}"
 
@@ -298,12 +371,27 @@ def execute_tool(workspace_dir: str, tool_name: str, arguments: dict) -> tuple[s
     if not executor:
         return f"Unknown tool: {tool_name}", False
 
+    started = time.monotonic()
+    success = False
+    result = ""
     try:
         result = executor(workspace, arguments)
+        success = True
         logger.info("Tool %s executed in %s", tool_name, workspace_dir)
         return result, True
     except PermissionError as e:
-        return str(e), False
+        result = str(e)
+        return result, False
     except Exception as e:
         logger.warning("Tool %s failed: %s", tool_name, e)
-        return f"Error: {e}", False
+        result = f"Error: {e}"
+        return result, False
+    finally:
+        _append_audit_event(workspace, {
+            "timestamp": dt.datetime.utcnow().isoformat() + "Z",
+            "tool": tool_name,
+            "arguments": arguments,
+            "success": success,
+            "duration_ms": round((time.monotonic() - started) * 1000, 2),
+            "output_preview": result[:1000],
+        })
