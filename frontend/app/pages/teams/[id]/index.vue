@@ -125,41 +125,7 @@ onMounted(fetchTeam)
 </script>
 
 <template>
-  <div style="min-height:100vh; background:var(--bg);">
-
-    <!-- Header -->
-    <header class="page-header">
-      <div class="t-header-left">
-        <NuxtLink to="/" class="logo font-display">Clone.dna</NuxtLink>
-        <span class="header-sep">/</span>
-        <span class="header-page" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-          {{ team?.name ?? '…' }}
-        </span>
-      </div>
-      <div class="t-header-right">
-        <span class="slots-badge font-mono">{{ slotsFilled() }}/4 filled</span>
-        <Transition name="fade-btn">
-          <div v-if="team && allFilled" class="flex items-center gap-2">
-            <NuxtLink
-              v-if="dnaComplete"
-              :to="`/teams/${teamId}/build`"
-              class="btn btn-primary"
-              style="font-size:13px;"
-            >
-              Build with Team →
-            </NuxtLink>
-            <button
-              class="btn"
-              :class="dnaComplete ? 'btn-secondary' : 'btn-primary'"
-              style="font-size:13px;"
-              @click="showCloneDna = true"
-            >
-              {{ dnaComplete ? '↺ Re-clone DNA' : 'Clone DNA →' }}
-            </button>
-          </div>
-        </Transition>
-      </div>
-    </header>
+  <div class="bg-[var(--bg)]">
 
     <!-- Loading / Error -->
     <div v-if="loading" class="t-state">
@@ -176,6 +142,30 @@ onMounted(fetchTeam)
         <div>
           <p class="t-team-num font-mono">Team #{{ team.id }}</p>
           <h1 class="t-team-name font-display">{{ team.name }}</h1>
+        </div>
+        <!-- CTA action buttons + slot progress -->
+        <div class="flex items-center gap-3 shrink-0">
+          <span class="slots-badge font-mono">{{ slotsFilled() }}/4 filled</span>
+          <Transition name="fade-btn">
+            <div v-if="allFilled" class="flex items-center gap-2">
+              <NuxtLink
+                v-if="dnaComplete"
+                :to="`/teams/${teamId}/build`"
+                class="btn btn-primary"
+                style="font-size:13px;"
+              >
+                Build with Team →
+              </NuxtLink>
+              <button
+                class="btn"
+                :class="dnaComplete ? 'btn-secondary' : 'btn-primary'"
+                style="font-size:13px;"
+                @click="showCloneDna = true"
+              >
+                {{ dnaComplete ? '↺ Re-clone DNA' : 'Clone DNA →' }}
+              </button>
+            </div>
+          </Transition>
         </div>
         <div v-if="team.discord_pair_code" class="discord-code">
           <span class="discord-label">Discord pair code</span>

@@ -5,14 +5,18 @@
  * Expanded: bio, soft skill badges, technical skill badges,
  * top 4 repositories with star counts, programming language bar charts.
  *
- * Props: candidate (CandidateProfile), expanded (boolean)
+ * Props: candidate (CandidateProfile), expanded (boolean), inheritSurface (optional — transparent bg when nested on a parent surface)
  */
 import type { CandidateProfile } from '~/composables/useApi'
 
-const props = defineProps<{
-  candidate: CandidateProfile
-  expanded: boolean
-}>()
+const props = withDefaults(
+  defineProps<{
+    candidate: CandidateProfile
+    expanded: boolean
+    inheritSurface?: boolean
+  }>(),
+  { inheritSurface: false },
+)
 
 function fmt(n: number) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
@@ -26,7 +30,10 @@ const topLangs = computed(() =>
 </script>
 
 <template>
-  <div class="pt-container">
+  <div
+    class="pt-container"
+    :class="{ 'pt-container--inherit': inheritSurface }"
+  >
 
     <!-- Identity row (always visible) -->
     <div class="pt-identity">
@@ -171,7 +178,14 @@ const topLangs = computed(() =>
 </template>
 
 <style scoped>
-.pt-container { font-size: 13px; color: #1C1811; }
+.pt-container {
+  font-size: 13px;
+  color: #1C1811;
+  background-color: var(--bg-card);
+}
+.pt-container--inherit {
+  background-color: transparent;
+}
 
 /* Identity */
 .pt-identity { display: flex; align-items: center; gap: 12px; }

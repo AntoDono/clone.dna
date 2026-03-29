@@ -219,7 +219,8 @@ onUnmounted(() => es?.close())
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-[var(--bg)]">
+  <Teleport to="body">
+  <div class="fixed inset-0 z-[200] flex flex-col overflow-hidden bg-[var(--bg)]">
 
     <!-- ── Header ─────────────────────────────────────────────────────────── -->
     <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-[var(--border)] bg-[var(--bg-card)]">
@@ -294,11 +295,11 @@ onUnmounted(() => es?.close())
     </div>
 
     <!-- ── Three columns ──────────────────────────────────────────────────── -->
-    <div class="flex-1 grid grid-cols-3 divide-x divide-[var(--border)] min-h-0">
+    <div class="flex-1 grid grid-cols-3 divide-x divide-[var(--border)] min-h-0 bg-[var(--bg)]">
       <div
         v-for="role in ROLES"
         :key="role.key"
-        class="flex flex-col min-h-0"
+        class="flex flex-col min-h-0 bg-[var(--bg)]"
       >
         <!-- Column header -->
         <div class="flex-shrink-0 px-6 py-4 border-b border-[var(--border)] bg-[var(--bg-card)]">
@@ -504,6 +505,7 @@ onUnmounted(() => es?.close())
       </div>
     </Transition>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

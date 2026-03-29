@@ -45,14 +45,14 @@ function select(candidate: CandidateProfile) {
         class="cs-header"
         @click="toggle(candidate.github_handle)"
       >
-        <ProfilingTree :candidate="candidate" :expanded="false" class="cs-tree" />
+        <ProfilingTree :candidate="candidate" :expanded="false" class="cs-tree" inherit-surface />
         <span class="cs-chevron">{{ expandedHandle === candidate.github_handle ? '▲' : '▼' }}</span>
       </button>
 
       <!-- Expanded profile -->
       <div v-if="expandedHandle === candidate.github_handle" class="cs-expanded">
         <hr class="cs-divider" />
-        <ProfilingTree :candidate="candidate" :expanded="true" />
+        <ProfilingTree :candidate="candidate" :expanded="true" inherit-surface />
 
         <div class="cs-footer">
           <a
@@ -81,7 +81,12 @@ function select(candidate: CandidateProfile) {
 </template>
 
 <style scoped>
-.cs-list { display: flex; flex-direction: column; gap: 8px; }
+.cs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background-color: var(--bg);
+}
 
 .cs-item {
   overflow: hidden;
@@ -105,17 +110,22 @@ function select(candidate: CandidateProfile) {
   gap: 12px;
   padding: 14px 16px;
   text-align: left;
-  background: transparent;
+  background-color: transparent;
   border: none;
   cursor: pointer;
-  transition: background 0.12s;
+  transition: background-color 0.12s;
 }
-.cs-header:hover { background: var(--bg-subtle); }
+.cs-header:hover {
+  background-color: var(--bg-hover);
+}
 
 .cs-tree { flex: 1; }
 .cs-chevron { font-size: 10px; color: #A8A098; margin-top: 2px; flex-shrink: 0; }
 
-.cs-expanded { padding: 0 16px 16px; }
+.cs-expanded {
+  padding: 0 16px 16px;
+  background-color: var(--bg-card);
+}
 .cs-divider {
   border: none;
   border-top: 1px solid #E2DDD6;

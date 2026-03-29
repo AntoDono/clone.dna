@@ -241,10 +241,11 @@ onUnmounted(() => es?.close())
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col bg-slate-950 overflow-hidden">
+  <Teleport to="body">
+  <div class="fixed inset-0 z-[200] flex flex-col bg-slate-950 overflow-hidden">
 
     <!-- ── Header ─────────────────────────────────────────────────────────── -->
-    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-slate-800">
+    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-slate-800 bg-slate-950">
       <div class="flex items-center gap-4">
         <span class="text-lg font-bold text-white tracking-tight">Clone.dna</span>
         <span class="text-slate-600">|</span>
@@ -267,7 +268,7 @@ onUnmounted(() => es?.close())
     </div>
 
     <!-- ── Candidate cards grid ───────────────────────────────────────────── -->
-    <div class="flex-1 overflow-y-auto p-6">
+    <div class="flex-1 overflow-y-auto p-6 bg-slate-950">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-5xl mx-auto">
         <div
           v-for="st in states"
@@ -477,6 +478,7 @@ onUnmounted(() => es?.close())
       </div>
     </Transition>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>

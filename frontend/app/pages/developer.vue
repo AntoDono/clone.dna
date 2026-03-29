@@ -84,20 +84,7 @@ function handleKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div style="min-height:100vh; background:var(--bg);">
-
-    <!-- Header -->
-    <header class="page-header">
-      <div class="dev-header-left">
-        <NuxtLink to="/" class="logo font-display">Clone.dna</NuxtLink>
-        <span class="header-sep">/</span>
-        <span class="header-page">Developer Portal</span>
-      </div>
-      <nav class="header-right">
-        <NuxtLink to="/registry" class="nav-link">Registry</NuxtLink>
-        <NuxtLink to="/" class="nav-link">Workspace</NuxtLink>
-      </nav>
-    </header>
+  <div class="bg-[var(--bg)]">
 
     <main class="dev-main">
 
@@ -261,12 +248,6 @@ export default {
 </script>
 
 <style scoped>
-.logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
-.header-sep { color: var(--border-mid); margin: 0 10px; }
-.header-page { font-size: 13px; color: var(--text-muted); }
-.dev-header-left { display: flex; align-items: center; }
-.header-right { display: flex; gap: 4px; align-items: center; }
-
 .dev-main { max-width: 720px; margin: 0 auto; padding: 52px 32px 80px; }
 
 .dev-hero { margin-bottom: 36px; }
