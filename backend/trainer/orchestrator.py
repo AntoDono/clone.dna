@@ -29,6 +29,31 @@ def _workspace_listing(workspace_dir: str | None, limit: int = 30) -> str:
     return ", ".join(names)
 
 
+def build_pm_prompt(user_text: str, team_members: list, workspace_dir: str | None = None) -> str:
+    """Wrap the user's request with PM orchestration instructions."""
+    roster = "\n".join(
+        f"  - @{m.github_handle} ({m.role_slot.role})" for m in team_members
+    )
+    ws_context = ""
+    listing = _workspace_listing(workspace_dir)
+    if listing:
+        ws_context = f"\nWorkspace contains: {listing}\n"
+
+    return (
+        "You are the PM leading this team. Your job is to:\n"
+        "1. Analyze the request and break it into concrete implementation steps\n"
+        "2. Create a clear plan specifying WHAT needs to be done and WHO should do it\n"
+        "3. You can also do work yourself using tools (write files, run commands, etc.)\n\n"
+        f"Your team:\n{roster}\n"
+        f"{ws_context}\n"
+        "In your response, lay out the plan with numbered steps. "
+        "For each step, note which team member is best suited. "
+        "If something is simple enough that you can just do it yourself with tools, do it. "
+        "Only delegate to specialists when their expertise is needed.\n\n"
+        f"User request: {user_text}"
+    )
+
+
 def assign_tasks(
     pm_response: str,
     specialists: list,
@@ -36,20 +61,13 @@ def assign_tasks(
     workspace_dir: str | None = None,
 ) -> list[dict]:
     """
-    Call Grok-4 to derive one task assignment per specialist from the PM's plan.
+    Call Grok-4 to derive task assignments from the PM's plan.
 
-    Args:
-        pm_response: The full text response from the PM/lead agent.
-        specialists:  List of Candidate ORM objects with .github_handle and .role_slot.role.
-        fallback_prompt: The original user prompt used when Grok parsing fails.
-        workspace_dir: Path to the team's sandboxed workspace (for context).
-
-    Returns:
-        List of {"handle": str, "task": str} dicts, one per specialist.
-        Falls back to assigning `fallback_prompt` to every specialist on any error.
+    Only assigns to specialists who actually have work to do — not everyone.
+    Returns an empty list if the PM handled everything.
     """
     if not specialists or not pm_response:
-        return [{"handle": s.github_handle, "task": fallback_prompt} for s in specialists]
+        return []
 
     specialist_list = ", ".join(
         f"{s.github_handle} ({s.role_slot.role})" for s in specialists
@@ -68,11 +86,15 @@ def assign_tasks(
             messages=[{
                 "role": "user",
                 "content": (
-                    f"PM said:\n{pm_response}\n\n"
-                    f"Team specialists: {specialist_list}.\n"
-                    f"{ws_context}"
-                    "For each specialist, write ONE short task assignment sentence. "
-                    "Return JSON: [{\"handle\": \"...\", \"task\": \"...\"}]. "
+                    f"PM's plan:\n{pm_response}\n\n"
+                    f"Available specialists: {specialist_list}.\n"
+                    f"{ws_context}\n"
+                    "Based on the PM's plan, assign tasks ONLY to specialists who have "
+                    "specific work to do. If the PM already handled everything or a specialist "
+                    "has no relevant task, do NOT include them.\n"
+                    "Each task should be a clear, actionable instruction.\n"
+                    "Return JSON: [{\"handle\": \"...\", \"task\": \"...\"}]\n"
+                    "Return an empty array [] if no specialist work is needed.\n"
                     "Return ONLY valid JSON."
                 ),
             }],
@@ -80,13 +102,12 @@ def assign_tasks(
             max_tokens=512,
         )
         raw = (resp.choices[0].message.content or "").strip()
-        # Strip markdown code fences if present
         if raw.startswith("```"):
             raw = raw.split("```")[1]
             if raw.startswith("json"):
                 raw = raw[4:]
         assignments: list[dict] = json.loads(raw.strip())
-        logger.info("assign_tasks: Grok assigned %d tasks", len(assignments))
+        logger.info("assign_tasks: Grok assigned %d tasks (of %d specialists)", len(assignments), len(specialists))
         return assignments
     except Exception as exc:
         logger.warning("assign_tasks: Grok call failed (%s) — falling back to broadcast", exc)

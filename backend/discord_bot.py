@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 from pathlib import Path
 
 import discord
@@ -21,7 +22,7 @@ import discord
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage, DiscordPairing
 from trainer import grok_chat
-from trainer.orchestrator import assign_tasks
+from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
 
 logger = logging.getLogger("discord_bot")
@@ -101,11 +102,111 @@ def _get_cloned_candidates(team: Team) -> tuple[Candidate | None, list[Candidate
     return lead, cloned
 
 
-async def run_orchestrate(team: Team, user_text: str) -> str:
-    """Run the full PM orchestrate flow and return a formatted response string."""
+EDIT_INTERVAL = 1.5  # seconds between discord message edits
+
+_TOOL_CALL_RE = re.compile(
+    r"<tool_call>\s*(\{.*?\})\s*</tool_call>",
+    re.DOTALL,
+)
+
+
+def _clean_tool_calls(text: str) -> str:
+    """Replace raw <tool_call> blocks with readable summaries."""
+    import json as _json
+
+    def _replace(m: re.Match) -> str:
+        try:
+            tc = _json.loads(m.group(1))
+            name = tc.get("name", "unknown")
+            args = tc.get("arguments", {})
+            if name == "run_command":
+                return f"`ran: {args.get('command', '?')}`"
+            if name == "write_file":
+                return f"`wrote: {args.get('path', '?')}`"
+            if name == "edit_file":
+                return f"`edited: {args.get('path', '?')}`"
+            if name == "read_file":
+                return f"`read: {args.get('path', '?')}`"
+            if name == "create_folder":
+                return f"`mkdir: {args.get('path', '?')}`"
+            if name == "list_files":
+                return f"`ls: {args.get('path', '.')}`"
+            return f"`{name}: {', '.join(f'{k}={v}' for k, v in args.items())}`"
+        except Exception:
+            return "`(tool call)`"
+
+    return _TOOL_CALL_RE.sub(_replace, text)
+
+
+async def _stream_speaker(
+    channel: discord.DMChannel,
+    label: str,
+    candidate: Candidate,
+    history: list[dict],
+    workspace: str,
+) -> str:
+    """Run grok_chat for one speaker, streaming edits to a Discord message.
+    Returns the full response text."""
+    buf: list[str] = []
+    buf_lock = asyncio.Lock()
+
+    def emit(event: dict):
+        tok = event.get("token")
+        if tok:
+            buf.append(tok)
+
+    task = asyncio.to_thread(
+        grok_chat,
+        candidate=candidate.to_dict(),
+        history=history,
+        emit=emit,
+        workspace_dir=workspace,
+        tools=TOOL_SCHEMAS,
+    )
+
+    msg = await channel.send(f"**{label}**\n...")
+    last_len = 0
+
+    async def poll_edits():
+        nonlocal last_len
+        while True:
+            await asyncio.sleep(EDIT_INTERVAL)
+            text = _clean_tool_calls("".join(buf))
+            if len(text) > last_len:
+                last_len = len(text)
+                display = f"**{label}**\n{text}"
+                if len(display) > DISCORD_MAX_LEN:
+                    display = display[:DISCORD_MAX_LEN - 4] + " ..."
+                try:
+                    await msg.edit(content=display)
+                except discord.HTTPException:
+                    pass
+
+    edit_task = asyncio.create_task(poll_edits())
+    try:
+        full_text = await task
+    finally:
+        edit_task.cancel()
+
+    cleaned = _clean_tool_calls(full_text) if full_text else ""
+    final = f"**{label}**\n{cleaned}" if cleaned else f"**{label}**\n*(no response)*"
+    chunks = _split_message(final)
+    try:
+        await msg.edit(content=chunks[0])
+    except discord.HTTPException:
+        pass
+    for extra in chunks[1:]:
+        await channel.send(extra)
+
+    return full_text
+
+
+async def run_orchestrate(team: Team, user_text: str, channel: discord.DMChannel) -> None:
+    """Run the full PM orchestrate flow, streaming each speaker to Discord."""
     lead, cloned = _get_cloned_candidates(team)
     if not cloned or not lead:
-        return "No cloned candidates on this team yet. Clone DNA first via the web UI."
+        await channel.send("No cloned candidates on this team yet. Clone DNA first via the web UI.")
+        return
 
     workspace = _workspace_for_team(team.id)
     team_id = team.id
@@ -122,24 +223,16 @@ async def run_orchestrate(team: Team, user_text: str) -> str:
         .order_by(ChatMessage.created_at)
     ]
 
-    parts: list[str] = []
     lead_handle = lead.github_handle
 
     # ── PM phase ─────────────────────────────────────────────────────────
-    collected: list[str] = []
+    pm_history = list(orch_history)
+    if pm_history and pm_history[-1].get("sender") == "user":
+        enriched = build_pm_prompt(pm_history[-1]["content"], cloned, workspace)
+        pm_history[-1] = {**pm_history[-1], "content": enriched}
 
-    def pm_emit(event: dict):
-        tok = event.get("token")
-        if tok:
-            collected.append(tok)
-
-    pm_text = await asyncio.to_thread(
-        grok_chat,
-        candidate=lead.to_dict(),
-        history=orch_history,
-        emit=pm_emit,
-        workspace_dir=workspace,
-        tools=TOOL_SCHEMAS,
+    pm_text = await _stream_speaker(
+        channel, f"@{lead_handle} (PM)", lead, pm_history, workspace,
     )
 
     if pm_text:
@@ -148,7 +241,6 @@ async def run_orchestrate(team: Team, user_text: str) -> str:
                 team=team_id, thread="orchestrate",
                 sender=lead_handle, content=pm_text,
             )
-        parts.append(f"**@{lead_handle}** (PM):\n{pm_text}")
 
     # ── Assign tasks ─────────────────────────────────────────────────────
     specialists = [c for c in cloned if c.github_handle != lead_handle]
@@ -165,20 +257,12 @@ async def run_orchestrate(team: Team, user_text: str) -> str:
         if not spec:
             continue
 
-        spec_collected: list[str] = []
-
-        def spec_emit(event: dict, _buf=spec_collected):
-            tok = event.get("token")
-            if tok:
-                _buf.append(tok)
-
-        spec_text = await asyncio.to_thread(
-            grok_chat,
-            candidate=spec.to_dict(),
-            history=[{"sender": "user", "content": task}],
-            emit=spec_emit,
-            workspace_dir=workspace,
-            tools=TOOL_SCHEMAS,
+        spec_text = await _stream_speaker(
+            channel,
+            f"@{spec_handle} ({spec.role_slot.role})",
+            spec,
+            [{"sender": "user", "content": task}],
+            workspace,
         )
 
         if spec_text:
@@ -187,9 +271,6 @@ async def run_orchestrate(team: Team, user_text: str) -> str:
                     team=team_id, thread="orchestrate",
                     sender=spec_handle, content=spec_text,
                 )
-            parts.append(f"**@{spec_handle}** ({spec.role_slot.role}):\n{spec_text}")
-
-    return "\n\n---\n\n".join(parts) if parts else "No response generated."
 
 
 # ── Bot setup ────────────────────────────────────────────────────────────────
@@ -219,29 +300,25 @@ async def on_message(message: discord.Message):
 
     pairing = get_pairing(user_id)
 
+    pair_result = try_pair(user_id, text)
+    if pair_result:
+        await message.reply(pair_result)
+        return
+
     if not pairing:
-        result = try_pair(user_id, text)
-        if result:
-            await message.reply(result)
-        else:
-            await message.reply(
-                "Send me your team's pairing code to get started. "
-                "You can find it on your team page in the web UI."
-            )
+        await message.reply(
+            "Send me your team's pairing code to get started. "
+            "You can find it on your team page in the web UI."
+        )
         return
 
     team = pairing.team
 
-    async with message.channel.typing():
-        try:
-            response = await run_orchestrate(team, text)
-        except Exception as e:
-            logger.exception("Orchestrate failed for team %s", team.id)
-            await message.reply(f"Something went wrong: {e}")
-            return
-
-    for chunk in _split_message(response):
-        await message.reply(chunk)
+    try:
+        await run_orchestrate(team, text, message.channel)
+    except Exception as e:
+        logger.exception("Orchestrate failed for team %s", team.id)
+        await message.reply(f"Something went wrong: {e}")
 
 
 async def start_bot() -> None:
@@ -250,5 +327,8 @@ async def start_bot() -> None:
     if not token:
         logger.info("DISCORD_BOT_TOKEN not set — Discord bot disabled")
         return
-    logger.info("Starting Discord bot...")
-    await client.start(token)
+    try:
+        logger.info("Starting Discord bot...")
+        await client.start(token)
+    except Exception:
+        logger.exception("Discord bot crashed")

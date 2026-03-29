@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from trainer.training import validate_vllm_export
+
 
 _DNAS_ROOT = Path(__file__).resolve().parent.parent / "dnas"
 
@@ -78,9 +80,13 @@ class TestDnaPackagingBasic:
         manifest = self._load(block_dir, "manifest.json")
         assert "handle" in manifest["candidate"]
 
-    def test_vllm_compatible(self, block_dir):
+    def test_vllm_compatible_matches_validation(self, block_dir):
         manifest = self._load(block_dir, "manifest.json")
-        assert manifest.get("vllm_compatible") is True
+        validated, issues = validate_vllm_export(block_dir)
+        assert manifest.get("vllm_compatible") == validated, (
+            f"manifest says vllm_compatible={manifest.get('vllm_compatible')} "
+            f"but validation returned {validated}: {issues}"
+        )
 
 
 @pytest.mark.skipif(not _FULL_BLOCKS, reason="No fully-trained .dna blocks found")
@@ -167,3 +173,53 @@ class TestDnaPackaging:
         assert (block_dir / "profile.md").exists(), "profile.md missing"
         content = (block_dir / "profile.md").read_text()
         assert len(content) > 50, "profile.md seems too short"
+
+
+class TestVllmValidation:
+    """Unit tests for validate_vllm_export without real adapter weights."""
+
+    def test_missing_dir(self, tmp_path):
+        ok, issues = validate_vllm_export(tmp_path / "nonexistent")
+        assert not ok
+        assert any("adapter_config.json" in i for i in issues)
+
+    def test_missing_config(self, tmp_path):
+        ok, issues = validate_vllm_export(tmp_path)
+        assert not ok
+        assert any("adapter_config.json" in i for i in issues)
+
+    def test_invalid_json(self, tmp_path):
+        (tmp_path / "adapter_config.json").write_text("{bad json")
+        ok, issues = validate_vllm_export(tmp_path)
+        assert not ok
+        assert any("unreadable" in i for i in issues)
+
+    def test_wrong_peft_type(self, tmp_path):
+        config = {"peft_type": "PREFIX_TUNING", "r": 16, "lora_alpha": 32, "target_modules": ["q_proj"]}
+        (tmp_path / "adapter_config.json").write_text(json.dumps(config))
+        (tmp_path / "adapter_model.safetensors").write_bytes(b"")
+        ok, issues = validate_vllm_export(tmp_path)
+        assert not ok
+        assert any("peft_type" in i for i in issues)
+
+    def test_missing_rank(self, tmp_path):
+        config = {"peft_type": "LORA", "lora_alpha": 32, "target_modules": ["q_proj"]}
+        (tmp_path / "adapter_config.json").write_text(json.dumps(config))
+        (tmp_path / "adapter_model.safetensors").write_bytes(b"")
+        ok, issues = validate_vllm_export(tmp_path)
+        assert not ok
+        assert any("rank" in i for i in issues)
+
+    def test_missing_weights(self, tmp_path):
+        config = {"peft_type": "LORA", "r": 32, "lora_alpha": 64, "target_modules": ["q_proj"]}
+        (tmp_path / "adapter_config.json").write_text(json.dumps(config))
+        ok, issues = validate_vllm_export(tmp_path)
+        assert not ok
+        assert any("adapter weights" in i.lower() or "no adapter" in i.lower() for i in issues)
+
+    def test_valid_config_with_bin_weights(self, tmp_path):
+        config = {"peft_type": "LORA", "r": 32, "lora_alpha": 64, "target_modules": ["q_proj"]}
+        (tmp_path / "adapter_config.json").write_text(json.dumps(config))
+        (tmp_path / "adapter_model.bin").write_bytes(b"\x00")
+        ok, issues = validate_vllm_export(tmp_path)
+        assert ok, f"Expected valid but got issues: {issues}"

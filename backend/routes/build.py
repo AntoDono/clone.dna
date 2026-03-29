@@ -11,7 +11,7 @@ from pydantic import BaseModel as PydanticModel
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage
 from trainer import agent_chat, compare_generation, grok_chat
-from trainer.orchestrator import assign_tasks
+from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
 
 router = APIRouter()
@@ -291,12 +291,17 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
         lead_handle = lead.github_handle
         pm_tokens: list[str] = []
 
+        pm_history = list(orch_history)
+        if pm_history and pm_history[-1].get("sender") == "user":
+            enriched = build_pm_prompt(pm_history[-1]["content"], cloned, workspace)
+            pm_history[-1] = {**pm_history[-1], "content": enriched}
+
         def run_pm():
             try:
                 if body.use_grok:
                     text = grok_chat(
                         candidate=lead.to_dict(),
-                        history=orch_history,
+                        history=pm_history,
                         emit=make_emit(lead_handle),
                         workspace_dir=workspace,
                         tools=TOOL_SCHEMAS,
@@ -307,7 +312,7 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
                         adapter_name=lead_handle,
                         role=lead.role_slot.role,
                         profile=lead.to_dict(),
-                        history=orch_history,
+                        history=pm_history,
                         emit=make_emit(lead_handle),
                         workspace_dir=workspace,
                         tools=TOOL_SCHEMAS,

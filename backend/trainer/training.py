@@ -230,6 +230,67 @@ def estimate_latency_overhead_ms(rank: int = 32, num_adapted_modules: int = 4) -
     return round(max(1.0, min(50.0, overhead)), 1)
 
 
+def validate_vllm_export(adapter_dir: Path) -> tuple[bool, list[str]]:
+    """Check that a saved adapter directory is structurally valid for vLLM --enable-lora.
+
+    Returns (is_compatible, issues) where issues lists any problems found.
+    Does not require vLLM to be installed — inspects files only.
+    """
+    issues: list[str] = []
+    adapter_dir = Path(adapter_dir)
+
+    config_path = adapter_dir / "adapter_config.json"
+    if not config_path.exists():
+        issues.append("adapter_config.json missing")
+        return False, issues
+
+    try:
+        config = json.loads(config_path.read_text())
+    except (json.JSONDecodeError, OSError) as e:
+        issues.append(f"adapter_config.json unreadable: {e}")
+        return False, issues
+
+    peft_type = config.get("peft_type", "")
+    if peft_type != "LORA":
+        issues.append(f"peft_type is '{peft_type}', expected 'LORA'")
+
+    rank = config.get("r")
+    if not isinstance(rank, int) or rank <= 0:
+        issues.append(f"invalid or missing rank (r={rank})")
+
+    for field in ("lora_alpha", "target_modules"):
+        if field not in config:
+            issues.append(f"missing required field '{field}'")
+
+    safetensors_path = adapter_dir / "adapter_model.safetensors"
+    bin_path = adapter_dir / "adapter_model.bin"
+    if not safetensors_path.exists() and not bin_path.exists():
+        issues.append("no adapter weights (adapter_model.safetensors or .bin)")
+        return False, issues
+
+    if safetensors_path.exists() and isinstance(rank, int) and rank > 0:
+        try:
+            from safetensors import safe_open
+            with safe_open(str(safetensors_path), framework="pt") as f:
+                tensor_names = f.keys()
+                has_lora_a = any("lora_A" in n for n in tensor_names)
+                has_lora_b = any("lora_B" in n for n in tensor_names)
+                if not has_lora_a or not has_lora_b:
+                    issues.append("weight tensors missing lora_A/lora_B naming pattern")
+                for name in tensor_names:
+                    if "lora_A" in name:
+                        shape = f.get_slice(name).get_shape()
+                        if shape[0] != rank:
+                            issues.append(
+                                f"tensor '{name}' dim 0 is {shape[0]}, expected rank {rank}"
+                            )
+                            break
+        except Exception as e:
+            issues.append(f"could not inspect safetensors: {e}")
+
+    return (len(issues) == 0), issues
+
+
 class _TrainingResult:
     """Carries loss metrics out of the training callback into the save block."""
     final_loss: float | None = None
@@ -509,6 +570,12 @@ def train_lora(
             torch.cuda.empty_cache()
         emit({"phase": "saving", "candidate": handle, "message": "Training adapter removed — model ready for inference"})
 
+    vllm_ok, vllm_issues = validate_vllm_export(Path(output_dir))
+    if vllm_ok:
+        emit({"phase": "saving", "candidate": handle, "message": "vLLM compatibility validated"})
+    else:
+        emit({"phase": "saving", "candidate": handle, "message": f"vLLM validation failed: {'; '.join(vllm_issues)}"})
+
     created_at = datetime.now(timezone.utc).isoformat()
     top_repos = candidate.get("top_repos", [])
     skills = candidate.get("skills", [])
@@ -559,7 +626,7 @@ def train_lora(
         "rank": 32,
         "alpha": 128,
         "quantization": "INT4" if os.getenv("QUANTIZATION_BITS") == "4" else "FP16",
-        "vllm_compatible": True,
+        "vllm_compatible": vllm_ok,
         "tags": skills[:8],
         "training_pairs": len(all_pairs),
         "candidate_pairs": len(pairs),
@@ -692,7 +759,7 @@ def train_lora(
 - Base model: `{base_model}`
 - LoRA rank: 32, alpha: 128
 - Trained: {created_at}
-- vLLM compatible: yes
+- vLLM compatible: {"yes" if vllm_ok else "no (" + "; ".join(vllm_issues) + ")"}
 
 ## Usage
 Load this .dna block via the Clone.dna runtime or directly with PEFT:
