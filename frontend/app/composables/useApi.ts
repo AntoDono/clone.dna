@@ -170,6 +170,13 @@ export const useApi = () => {
     revokeBlock: (teamId: string, handle: string): Promise<{ status: string }> =>
       $fetch(`${base}/registry/${teamId}/${handle}`, { method: 'DELETE', headers: h() }),
 
+    importBlock: (file: File, teamId: string): Promise<{ status: string; team_id: string; handle: string; files: number; manifest: Record<string, unknown> }> => {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('team_id', teamId)
+      return $fetch(`${base}/registry/import`, { method: 'POST', body: form, headers: h() })
+    },
+
     getBuildMessages: (teamId: number, thread: string): Promise<ChatMessage[]> =>
       $fetch(`${base}/teams/${teamId}/build/messages?thread=${encodeURIComponent(thread)}`, { headers: h() }),
   }

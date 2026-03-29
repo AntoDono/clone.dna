@@ -16,7 +16,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger(__name__)
@@ -241,6 +241,103 @@ def download_block(team_id: str, handle: str):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Import a DNA block from a zip upload ──────────────────────────────────────
+
+@router.post("/import")
+async def import_block(
+    file: UploadFile = File(..., description="A .dna zip archive exported from this or another registry"),
+    team_id: str = Form(..., description="Team ID to import the block under"),
+):
+    """
+    Import a .dna block from a zip archive.
+
+    The zip must contain a valid manifest.json with ``type: candidate_dna_block``
+    and a ``candidate.github_handle`` field.  All files in the archive are
+    extracted to ``DNAS_DIR/{team_id}/{handle}/``.
+
+    If a non-revoked block for the same team/handle already exists the import is
+    rejected with 409 — revoke the existing block first or use a different team_id.
+    """
+    if not file.filename or not file.filename.endswith(".zip"):
+        raise HTTPException(400, "Uploaded file must be a .zip archive")
+
+    raw = await file.read()
+    try:
+        zf = zipfile.ZipFile(io.BytesIO(raw))
+    except zipfile.BadZipFile:
+        raise HTTPException(400, "Invalid zip file")
+
+    # Validate manifest
+    if "manifest.json" not in zf.namelist():
+        raise HTTPException(422, "Archive does not contain manifest.json — not a valid .dna block")
+
+    try:
+        manifest = json.loads(zf.read("manifest.json"))
+    except Exception:
+        raise HTTPException(422, "manifest.json is not valid JSON")
+
+    if manifest.get("type") != "candidate_dna_block":
+        raise HTTPException(
+            422,
+            f"manifest.json type is '{manifest.get('type')}', expected 'candidate_dna_block'",
+        )
+
+    handle = (
+        (manifest.get("candidate") or {}).get("github_handle")
+        or manifest.get("name")
+    )
+    if not handle:
+        raise HTTPException(
+            422,
+            "Cannot determine GitHub handle — manifest.json missing candidate.github_handle",
+        )
+
+    # Sanitise inputs
+    team_id = team_id.strip().strip("/")
+    handle = handle.strip().strip("/")
+    if not team_id or "/" in team_id or ".." in team_id:
+        raise HTTPException(400, "Invalid team_id")
+    if not handle or "/" in handle or ".." in handle:
+        raise HTTPException(400, "Invalid handle in manifest")
+
+    block_dir = _DNAS_ROOT / team_id / handle
+
+    # Reject if a live (non-revoked) block already exists
+    if block_dir.exists() and (block_dir / "manifest.json").exists() and not (block_dir / "revoked.json").exists():
+        raise HTTPException(
+            409,
+            f"A DNA block for '{handle}' under team '{team_id}' already exists. "
+            "Revoke it first or choose a different team_id.",
+        )
+
+    block_dir.mkdir(parents=True, exist_ok=True)
+
+    # Strip any path prefixes from archived filenames (flat extraction)
+    for name in zf.namelist():
+        fname = Path(name).name
+        if not fname or fname.startswith("."):
+            continue
+        dest = block_dir / fname
+        dest.write_bytes(zf.read(name))
+
+    # Remove any leftover revoked.json so the re-imported block is visible
+    revoked_path = block_dir / "revoked.json"
+    if revoked_path.exists():
+        revoked_path.unlink()
+
+    logger.info("Imported DNA block %s/%s (%d files)", team_id, handle, len(zf.namelist()))
+
+    eval_data = _read_json(block_dir / "eval.json")
+    return {
+        "status": "imported",
+        "team_id": team_id,
+        "handle": handle,
+        "files": len(zf.namelist()),
+        "manifest": manifest,
+        "eval_summary": manifest.get("eval_summary", eval_data.get("benchmarks", {})),
+    }
 
 
 # ── Cross-block adapter similarity ───────────────────────────────────────────

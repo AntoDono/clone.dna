@@ -39,6 +39,15 @@ const selectedBlock = ref<DnaBlock | null>(null)
 const revoking = ref<string | null>(null)
 const revokeError = ref('')
 
+// Import state
+const showImport = ref(false)
+const importFile = ref<File | null>(null)
+const importTeamId = ref('')
+const importing = ref(false)
+const importError = ref('')
+const importSuccess = ref('')
+const importFileInput = ref<HTMLInputElement | null>(null)
+
 async function fetchBlocks() {
   loading.value = true
   try {
@@ -93,6 +102,45 @@ async function revokeBlock(b: DnaBlock) {
   }
 }
 
+function openImport() {
+  showImport.value = true
+  importFile.value = null
+  importTeamId.value = ''
+  importError.value = ''
+  importSuccess.value = ''
+}
+
+function closeImport() {
+  if (importing.value) return
+  showImport.value = false
+}
+
+function onFileChange(e: Event) {
+  const input = e.target as HTMLInputElement
+  importFile.value = input.files?.[0] ?? null
+  importError.value = ''
+  importSuccess.value = ''
+}
+
+async function doImport() {
+  if (!importFile.value) { importError.value = 'Please select a .dna zip file.'; return }
+  if (!importTeamId.value.trim()) { importError.value = 'Please enter a team ID.'; return }
+  importing.value = true
+  importError.value = ''
+  importSuccess.value = ''
+  try {
+    const result = await api.importBlock(importFile.value, importTeamId.value.trim())
+    importSuccess.value = `Imported @${result.handle} → team ${result.team_id} (${result.files} files)`
+    await fetchBlocks()
+    setTimeout(() => { showImport.value = false; importSuccess.value = '' }, 2500)
+  } catch (err: unknown) {
+    const msg = (err as { data?: { detail?: string } })?.data?.detail
+    importError.value = msg || 'Import failed. Check the zip is a valid .dna block.'
+  } finally {
+    importing.value = false
+  }
+}
+
 onMounted(fetchBlocks)
 </script>
 
@@ -108,17 +156,22 @@ onMounted(fetchBlocks)
           <h1 class="reg-title font-display">DNA Registry</h1>
           <p class="reg-subtitle">Browse, download, and manage minted .dna blocks</p>
         </div>
-        <div class="reg-search-wrap">
-          <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
-            <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
-            <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          </svg>
-          <input
-            v-model="search"
-            type="text"
-            placeholder="Search by handle, skill, or domain…"
-            class="reg-search"
-          />
+        <div class="reg-top-right">
+          <div class="reg-search-wrap">
+            <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+              <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+            <input
+              v-model="search"
+              type="text"
+              placeholder="Search by handle, skill, or domain…"
+              class="reg-search"
+            />
+          </div>
+          <button class="btn btn-primary" style="font-size:13px; white-space:nowrap;" @click="openImport">
+            ↑ Import .dna
+          </button>
         </div>
       </div>
 
@@ -252,6 +305,78 @@ onMounted(fetchBlocks)
         {{ filtered.length }} / {{ blocks.length }} blocks
       </p>
     </main>
+
+    <!-- Import modal -->
+    <Teleport to="body">
+      <Transition name="fade">
+        <div v-if="showImport" class="modal-backdrop" @click.self="closeImport">
+          <div class="modal-box card" @click.stop>
+            <div class="modal-header">
+              <span class="modal-title font-display">Import .dna Block</span>
+              <button class="modal-close" :disabled="importing" @click="closeImport">✕</button>
+            </div>
+
+            <p class="modal-desc">
+              Upload a <span class="font-mono">.dna</span> zip archive exported from any Clone.dna registry.
+              The block will be registered under the team ID you specify.
+            </p>
+
+            <!-- File drop zone -->
+            <label class="drop-zone" :class="{ 'drop-zone--has-file': importFile }">
+              <input
+                ref="importFileInput"
+                type="file"
+                accept=".zip"
+                style="display:none"
+                @change="onFileChange"
+              />
+              <div v-if="!importFile" class="drop-inner">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                  <polyline points="17 8 12 3 7 8"/>
+                  <line x1="12" y1="3" x2="12" y2="15"/>
+                </svg>
+                <span>Click to select a .dna zip file</span>
+              </div>
+              <div v-else class="drop-inner drop-inner--selected">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span class="font-mono" style="font-size:13px;">{{ importFile.name }}</span>
+                <span style="font-size:11px; color:var(--text-muted);">{{ (importFile.size / 1024).toFixed(0) }} KB</span>
+              </div>
+            </label>
+
+            <div class="modal-field">
+              <label class="field-label">Target Team ID</label>
+              <input
+                v-model="importTeamId"
+                type="text"
+                class="reg-search"
+                style="width:100%; padding-left:14px;"
+                placeholder="e.g. 1"
+                :disabled="importing"
+              />
+              <span class="field-hint">The block will be stored under <span class="font-mono">dnas/{team_id}/{handle}/</span></span>
+            </div>
+
+            <div v-if="importError" class="error-callout">{{ importError }}</div>
+            <div v-if="importSuccess" class="success-callout">{{ importSuccess }}</div>
+
+            <div class="modal-actions">
+              <button class="btn" :disabled="importing" @click="closeImport">Cancel</button>
+              <button
+                class="btn btn-primary"
+                :disabled="importing || !importFile"
+                @click="doImport"
+              >
+                {{ importing ? 'Importing…' : 'Import Block' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
   </div>
 </template>
 
@@ -389,4 +514,95 @@ onMounted(fetchBlocks)
 .expand-enter-active, .expand-leave-active { transition: all 0.2s ease; overflow: hidden; }
 .expand-enter-from, .expand-leave-to { opacity: 0; max-height: 0; }
 .expand-enter-to, .expand-leave-from { opacity: 1; max-height: 600px; }
+
+/* Top-right row with search + import button */
+.reg-top-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Import modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+}
+.modal-box {
+  width: 100%;
+  max-width: 460px;
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.modal-title { font-size: 18px; font-weight: 400; color: var(--text-primary); }
+.modal-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px 8px;
+  border-radius: var(--radius);
+  transition: background 0.15s;
+}
+.modal-close:hover { background: var(--border); }
+.modal-desc { font-size: 13px; color: var(--text-muted); line-height: 1.6; }
+
+/* Drop zone */
+.drop-zone {
+  border: 1.5px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+}
+.drop-zone:hover, .drop-zone--has-file { border-color: var(--accent); }
+.drop-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 20px;
+}
+.drop-inner--selected { color: var(--accent); }
+
+/* Field */
+.modal-field { display: flex; flex-direction: column; gap: 6px; }
+.field-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.field-hint { font-size: 11px; color: var(--text-muted); }
+
+/* Success */
+.success-callout {
+  font-size: 13px;
+  color: var(--accent);
+  background: rgba(22,101,52,0.08);
+  border: 1px solid rgba(22,101,52,0.2);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+
+/* Fade transition for modal */
+.fade-enter-active, .fade-leave-active { transition: opacity 0.2s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
 </style>

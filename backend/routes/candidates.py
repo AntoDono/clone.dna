@@ -113,7 +113,7 @@ async def headhunt_stream(team_id: int, force: bool = Query(False), current_user
 
         for role in ["pm", "swe", "designer"]:
             try:
-                handles = await asyncio.to_thread(search_users_raw, role, 5)
+                handles = await asyncio.to_thread(search_users_raw, role, 10)
             except Exception as e:
                 yield f"data: {json.dumps({'error': f'GitHub search failed for {role}: {e}'})}\n\n"
                 handles = []
