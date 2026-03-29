@@ -172,6 +172,67 @@ def search_registry(
     }
 
 
+# ── Developer self-service portal (must be before /{team_id}/{handle} — literal
+# path segment "developer" would otherwise be parsed as team_id)
+
+@router.get("/developer/{handle}")
+def developer_lookup(handle: str):
+    """
+    Developer self-service endpoint — given a GitHub handle, return every DNA
+    block minted from their public repos along with its consent status, revocation
+    state, and a direct revocation endpoint URL.
+
+    Powers the /developer portal where developers can audit and control whether
+    their public code has been used to train a .dna block.
+    """
+    handle_lower = handle.lower()
+    blocks: list[dict] = []
+
+    if not _DNAS_ROOT.exists():
+        return {"handle": handle, "blocks": [], "total": 0}
+
+    for team_dir in sorted(_DNAS_ROOT.iterdir()):
+        if not team_dir.is_dir():
+            continue
+        for handle_dir in sorted(team_dir.iterdir()):
+            if handle_dir.name.lower() != handle_lower:
+                continue
+            manifest_path = handle_dir / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            manifest = _read_json(manifest_path)
+            consent = _read_json(handle_dir / "consent.json")
+            revoked_path = handle_dir / "revoked.json"
+            revoked_data = _read_json(revoked_path) if revoked_path.exists() else None
+
+            blocks.append({
+                "team_id":          team_dir.name,
+                "handle":           handle_dir.name,
+                "version":          manifest.get("version", "1.0.0"),
+                "base_model":       manifest.get("base_model"),
+                "created":          manifest.get("created"),
+                "consent_status":   consent.get("consent_status", "implicit_public"),
+                "consent_verified": manifest.get("candidate", {}).get("consent_verified", False),
+                "revocable":        consent.get("revocable", True),
+                "revoked":          revoked_data is not None,
+                "revoked_at":       revoked_data.get("revoked_at") if revoked_data else None,
+                "source_urls":      consent.get("source_urls", []),
+                "revocation_endpoint": f"/registry/{team_dir.name}/{handle_dir.name}",
+            })
+
+    return {
+        "handle":   handle,
+        "total":    len(blocks),
+        "blocks":   blocks,
+        "message":  (
+            "To revoke a block, send DELETE to the revocation_endpoint listed above. "
+            "Revoked blocks are hidden from all registry listings and downloads immediately."
+            if blocks else
+            "No DNA blocks found for this handle. Your code has not been used to train any block in this registry."
+        ),
+    }
+
+
 # ── Single block detail ───────────────────────────────────────────────────────
 
 @router.get("/{team_id}/{handle}")
@@ -480,63 +541,3 @@ def revoke_block(team_id: str, handle: str):
     revoked_path.write_text(json.dumps(revoked, indent=2))
     logger.info("Revoked DNA block %s/%s", team_id, handle)
     return {"status": "revoked", "team_id": team_id, "handle": handle}
-
-
-# ── Developer self-service portal ─────────────────────────────────────────────
-
-@router.get("/developer/{handle}")
-def developer_lookup(handle: str):
-    """
-    Developer self-service endpoint — given a GitHub handle, return every DNA
-    block minted from their public repos along with its consent status, revocation
-    state, and a direct revocation endpoint URL.
-
-    Powers the /developer portal where developers can audit and control whether
-    their public code has been used to train a .dna block.
-    """
-    handle_lower = handle.lower()
-    blocks: list[dict] = []
-
-    if not _DNAS_ROOT.exists():
-        return {"handle": handle, "blocks": [], "total": 0}
-
-    for team_dir in sorted(_DNAS_ROOT.iterdir()):
-        if not team_dir.is_dir():
-            continue
-        for handle_dir in sorted(team_dir.iterdir()):
-            if handle_dir.name.lower() != handle_lower:
-                continue
-            manifest_path = handle_dir / "manifest.json"
-            if not manifest_path.exists():
-                continue
-            manifest = _read_json(manifest_path)
-            consent = _read_json(handle_dir / "consent.json")
-            revoked_path = handle_dir / "revoked.json"
-            revoked_data = _read_json(revoked_path) if revoked_path.exists() else None
-
-            blocks.append({
-                "team_id":          team_dir.name,
-                "handle":           handle_dir.name,
-                "version":          manifest.get("version", "1.0.0"),
-                "base_model":       manifest.get("base_model"),
-                "created":          manifest.get("created"),
-                "consent_status":   consent.get("consent_status", "implicit_public"),
-                "consent_verified": manifest.get("candidate", {}).get("consent_verified", False),
-                "revocable":        consent.get("revocable", True),
-                "revoked":          revoked_data is not None,
-                "revoked_at":       revoked_data.get("revoked_at") if revoked_data else None,
-                "source_urls":      consent.get("source_urls", []),
-                "revocation_endpoint": f"/registry/{team_dir.name}/{handle_dir.name}",
-            })
-
-    return {
-        "handle":   handle,
-        "total":    len(blocks),
-        "blocks":   blocks,
-        "message":  (
-            "To revoke a block, send DELETE to the revocation_endpoint listed above. "
-            "Revoked blocks are hidden from all registry listings and downloads immediately."
-            if blocks else
-            "No DNA blocks found for this handle. Your code has not been used to train any block in this registry."
-        ),
-    }
