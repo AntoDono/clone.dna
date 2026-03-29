@@ -19,12 +19,14 @@ class BaseModel(Model):
 
 class Team(BaseModel):
     name = CharField()
+    discord_pair_code = CharField(null=True, unique=True)
     created_at = DateTimeField(default=datetime.utcnow)
 
     def to_dict(self) -> dict:
         return {
             "id": self.id,
             "name": self.name,
+            "discord_pair_code": self.discord_pair_code,
             "created_at": self.created_at.isoformat(),
             "slots": [s.to_dict() for s in self.slots.order_by(RoleSlot.id)],
         }
@@ -70,6 +72,7 @@ class Candidate(BaseModel):
     dna_path      = CharField(null=True)   # e.g. "dnas/1/torvalds"
     dna_cloned_at = DateTimeField(null=True)
     system_prompt = TextField(null=True)   # generated identity prompt saved after clone-dna
+    personality_profile = TextField(null=True)  # JSON: structured personality/style analysis
 
     def to_dict(self) -> dict:
         return {
@@ -92,6 +95,7 @@ class Candidate(BaseModel):
             "dna_path": self.dna_path,
             "dna_cloned_at": self.dna_cloned_at.isoformat() if self.dna_cloned_at else None,
             "system_prompt": self.system_prompt,
+            "personality_profile": json.loads(self.personality_profile) if self.personality_profile else None,
         }
 
 
@@ -110,3 +114,9 @@ class ChatMessage(BaseModel):
             "content": self.content,
             "created_at": self.created_at.isoformat(),
         }
+
+
+class DiscordPairing(BaseModel):
+    discord_user_id = CharField(unique=True)
+    team = ForeignKeyField(Team, backref="discord_pairings", on_delete="CASCADE")
+    paired_at = DateTimeField(default=datetime.utcnow)

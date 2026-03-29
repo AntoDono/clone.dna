@@ -405,14 +405,40 @@ def train_lora(
         num_epochs = 2
         batch_size = 2
         gradient_accumulation_steps = 4
+        learning_rate = 2e-4
+        lora_rank = 32
+        lora_alpha = 128
         steps_per_epoch = max(1, math.ceil(len(tokenized_ds) / batch_size / gradient_accumulation_steps))
         total_steps = steps_per_epoch * num_epochs
+        optimizer_name = "paged_adamw_8bit" if is_quantized else "adamw_torch"
 
         emit({
             "phase": "training",
             "candidate": handle,
             "message": f"Training {len(all_pairs)} total pairs × {num_epochs} epochs = ~{total_steps} steps",
             "total_steps": total_steps,
+        })
+
+        emit({
+            "phase": "training",
+            "candidate": handle,
+            "training_config": {
+                "epochs": num_epochs,
+                "batch_size": batch_size,
+                "gradient_accumulation_steps": gradient_accumulation_steps,
+                "effective_batch_size": batch_size * gradient_accumulation_steps,
+                "learning_rate": learning_rate,
+                "optimizer": optimizer_name,
+                "lora_rank": lora_rank,
+                "lora_alpha": lora_alpha,
+                "max_seq_length": MAX_LEN,
+                "total_pairs": len(all_pairs),
+                "candidate_pairs": len(pairs),
+                "base_instruct_pairs": len(base_pairs),
+                "tool_use_pairs": len(TOOL_USE_EXAMPLES),
+                "total_steps": total_steps,
+                "fp16": torch.cuda.is_available(),
+            },
         })
 
         _training_result = _TrainingResult()
@@ -427,12 +453,18 @@ def train_lora(
                     _training_result.final_loss = loss_val
                     if _training_result.best_loss is None or loss_val < _training_result.best_loss:
                         _training_result.best_loss = loss_val
+
+                    current_lr = logs.get("learning_rate", 0.0)
+                    current_epoch = state.epoch or 0.0
+
                     emit({
                         "phase": "training",
                         "candidate": handle,
                         "step": state.global_step,
                         "total_steps": total_steps,
                         "loss": loss_val,
+                        "learning_rate": round(float(current_lr), 8),
+                        "epoch": round(float(current_epoch), 2),
                     })
 
         training_args = TrainingArguments(
@@ -440,7 +472,7 @@ def train_lora(
             num_train_epochs=num_epochs,
             per_device_train_batch_size=batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
-            learning_rate=2e-4,
+            learning_rate=learning_rate,
             fp16=torch.cuda.is_available(),
             logging_steps=1,
             save_strategy="no",
@@ -449,7 +481,7 @@ def train_lora(
             remove_unused_columns=False,
             gradient_checkpointing=is_quantized,
             gradient_checkpointing_kwargs={"use_reentrant": False} if is_quantized else {},
-            optim="paged_adamw_8bit" if is_quantized else "adamw_torch",
+            optim=optimizer_name,
         )
 
         trainer = Trainer(
@@ -494,6 +526,20 @@ def train_lora(
     domain_accuracy = compute_domain_accuracy(pairs, candidate)
     humaneval_score = compute_humaneval_proxy(pairs)
     latency_overhead_ms = estimate_latency_overhead_ms(rank=32, num_adapted_modules=4)
+
+    emit({
+        "phase": "eval",
+        "candidate": handle,
+        "metrics": {
+            "final_loss": final_loss,
+            "best_loss": best_loss,
+            "style_consistency": style_consistency,
+            "style_metrics": style_metrics,
+            "domain_accuracy": domain_accuracy,
+            "humaneval_score": humaneval_score,
+            "latency_overhead_ms": latency_overhead_ms,
+        },
+    })
 
     manifest = {
         "name": f"{handle}-dna",

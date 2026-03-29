@@ -15,18 +15,50 @@ const config = useRuntimeConfig()
 
 // ── State per candidate ───────────────────────────────────────────────────────
 
+interface TrainingConfig {
+  epochs: number
+  batch_size: number
+  gradient_accumulation_steps: number
+  effective_batch_size: number
+  learning_rate: number
+  optimizer: string
+  lora_rank: number
+  lora_alpha: number
+  max_seq_length: number
+  total_pairs: number
+  candidate_pairs: number
+  base_instruct_pairs: number
+  tool_use_pairs: number
+  total_steps: number
+  fp16: boolean
+}
+
+interface EvalMetrics {
+  final_loss: number | null
+  best_loss: number | null
+  style_consistency: number | null
+  style_metrics: Record<string, unknown> | null
+  domain_accuracy: number | null
+  humaneval_score: number | null
+  latency_overhead_ms: number | null
+}
+
 interface CandidateState {
   candidate: CandidateProfile
   role: string
-  phase: 'waiting' | 'collecting' | 'generating' | 'training' | 'saving' | 'done' | 'error' | 'skipped'
+  phase: 'waiting' | 'collecting' | 'generating' | 'training' | 'saving' | 'eval' | 'done' | 'error' | 'skipped'
   message: string
   step: number
   totalSteps: number
   loss: number | null
   bestLoss: number | null
+  learningRate: number | null
+  epoch: number | null
   pairsCount: number
   path: string | null
   error: string | null
+  trainingConfig: TrainingConfig | null
+  evalMetrics: EvalMetrics | null
 }
 
 const states = ref<CandidateState[]>([])
@@ -47,15 +79,19 @@ function buildInitialStates() {
     .map(s => ({
       candidate: s.candidate!,
       role: s.role,
-      phase: 'waiting',
+      phase: 'waiting' as const,
       message: 'Queued...',
       step: 0,
       totalSteps: 0,
       loss: null,
       bestLoss: null,
+      learningRate: null,
+      epoch: null,
       pairsCount: 0,
       path: null,
       error: null,
+      trainingConfig: null,
+      evalMetrics: null,
     }))
 }
 
@@ -122,6 +158,9 @@ function handleEvent(data: Record<string, unknown>) {
     st.message = (data.message as string) || `Generating training pairs...`
   } else if (phase === 'training') {
     st.phase = 'training'
+    if (data.training_config) {
+      st.trainingConfig = data.training_config as TrainingConfig
+    }
     if (data.total_steps) st.totalSteps = data.total_steps as number
     if (data.step !== undefined) st.step = data.step as number
     if (data.loss !== undefined) {
@@ -129,7 +168,13 @@ function handleEvent(data: Record<string, unknown>) {
       st.loss = l
       if (st.bestLoss === null || l < st.bestLoss) st.bestLoss = l
     }
+    if (data.learning_rate !== undefined) st.learningRate = data.learning_rate as number
+    if (data.epoch !== undefined) st.epoch = data.epoch as number
     st.message = (data.message as string) || `Step ${st.step}/${st.totalSteps}`
+  } else if (phase === 'eval') {
+    st.phase = 'eval'
+    if (data.metrics) st.evalMetrics = data.metrics as EvalMetrics
+    st.message = 'Evaluating model quality...'
   } else if (phase === 'saving') {
     st.phase = 'saving'
     st.message = (data.message as string) || 'Saving LoRA adapter...'
@@ -158,6 +203,7 @@ function phaseLabel(phase: CandidateState['phase']): string {
     collecting: 'Collecting code',
     generating: 'Generating pairs',
     training:   'Training LoRA',
+    eval:       'Evaluating',
     saving:     'Saving adapter',
     done:       'DNA Cloned',
     error:      'Error',
@@ -220,6 +266,7 @@ onUnmounted(() => es?.close())
             'border-red-700/60': st.phase === 'error',
             'border-slate-700/40': st.phase === 'waiting' || st.phase === 'skipped',
             'border-blue-700/60': st.phase === 'training',
+            'border-cyan-700/60': st.phase === 'eval',
             'border-amber-700/40': st.phase === 'collecting' || st.phase === 'generating',
             'border-purple-700/40': st.phase === 'saving',
           }"
@@ -263,6 +310,7 @@ onUnmounted(() => es?.close())
                 'border-red-700 text-red-400 bg-red-950/30': st.phase === 'error',
                 'border-slate-700 text-slate-500': st.phase === 'waiting',
                 'border-blue-700 text-blue-400 bg-blue-950/30 animate-pulse': st.phase === 'training',
+                'border-cyan-700 text-cyan-400 bg-cyan-950/30': st.phase === 'eval',
                 'border-amber-700/60 text-amber-400/80': st.phase === 'collecting' || st.phase === 'generating',
                 'border-purple-700/60 text-purple-400/80': st.phase === 'saving',
                 'border-slate-700 text-slate-600': st.phase === 'skipped',
@@ -270,18 +318,37 @@ onUnmounted(() => es?.close())
             >{{ phaseLabel(st.phase) }}</span>
           </div>
 
+
+
           <!-- Status message -->
           <p class="text-xs text-slate-500 font-mono leading-relaxed min-h-[1.2rem]">
             {{ st.message }}
           </p>
 
+          <!-- Training config panel -->
+          <div v-if="st.trainingConfig" class="bg-slate-950/60 border border-slate-800 px-3 py-2">
+            <div class="grid grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
+              <div><span class="text-slate-600">Epochs:</span> <span class="text-slate-300">{{ st.trainingConfig.epochs }}</span></div>
+              <div><span class="text-slate-600">LR:</span> <span class="text-slate-300">{{ st.trainingConfig.learning_rate }}</span></div>
+              <div><span class="text-slate-600">Batch:</span> <span class="text-slate-300">{{ st.trainingConfig.batch_size }}×{{ st.trainingConfig.gradient_accumulation_steps }}</span></div>
+              <div><span class="text-slate-600">LoRA:</span> <span class="text-slate-300">r{{ st.trainingConfig.lora_rank }}/a{{ st.trainingConfig.lora_alpha }}</span></div>
+            </div>
+            <div class="text-xs font-mono text-slate-500 mt-1">
+              Pairs: {{ st.trainingConfig.candidate_pairs }} candidate + {{ st.trainingConfig.base_instruct_pairs }} base + {{ st.trainingConfig.tool_use_pairs }} tool = {{ st.trainingConfig.total_pairs }} total
+            </div>
+          </div>
+
           <!-- Training progress -->
-          <div v-if="st.phase === 'training' || (st.phase !== 'waiting' && st.totalSteps > 0)">
+          <div v-if="st.phase === 'training' || st.phase === 'eval' || (st.phase !== 'waiting' && st.totalSteps > 0)">
             <div class="flex items-center justify-between mb-1.5">
               <span class="text-xs text-slate-600">
+                <template v-if="st.epoch !== null">Epoch {{ st.epoch }}/{{ st.trainingConfig?.epochs ?? 2 }} · </template>
                 Step {{ st.step }}/{{ st.totalSteps }}
               </span>
               <div class="flex items-center gap-3">
+                <span v-if="st.learningRate !== null" class="text-xs font-mono text-slate-500">
+                  lr {{ st.learningRate.toExponential(1) }}
+                </span>
                 <span v-if="st.loss !== null" class="text-xs font-mono text-blue-400">
                   loss {{ st.loss.toFixed(4) }}
                 </span>
@@ -297,9 +364,10 @@ onUnmounted(() => es?.close())
                   'bg-blue-500': st.phase === 'training',
                   'bg-green-500': st.phase === 'done',
                   'bg-red-500': st.phase === 'error',
+                  'bg-cyan-500': st.phase === 'eval',
                   'bg-slate-600': st.phase === 'saving',
                 }"
-                :style="{ width: `${st.phase === 'done' ? 100 : progressPct(st)}%` }"
+                :style="{ width: `${['done', 'eval', 'saving'].includes(st.phase) ? 100 : progressPct(st)}%` }"
               ></div>
             </div>
           </div>
@@ -311,8 +379,46 @@ onUnmounted(() => es?.close())
             </div>
           </div>
 
-          <!-- Pairs count -->
-          <div v-if="st.pairsCount > 0" class="flex items-center gap-2">
+          <!-- Eval metrics panel -->
+          <div v-if="st.evalMetrics" class="bg-slate-950/60 border border-slate-800 px-3 py-2">
+            <p class="text-xs text-slate-500 mb-1.5 font-medium">Evaluation Metrics</p>
+            <div class="grid grid-cols-4 gap-x-4 gap-y-1.5 text-xs font-mono">
+              <div class="flex flex-col">
+                <span class="text-slate-600">Style</span>
+                <div class="flex items-center gap-1.5">
+                  <div class="flex-1 h-1 bg-slate-800 overflow-hidden">
+                    <div class="h-full bg-cyan-500" :style="{ width: `${(st.evalMetrics.style_consistency ?? 0) * 100}%` }"></div>
+                  </div>
+                  <span class="text-cyan-400 w-8 text-right">{{ ((st.evalMetrics.style_consistency ?? 0) * 100).toFixed(0) }}%</span>
+                </div>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-slate-600">Domain</span>
+                <div class="flex items-center gap-1.5">
+                  <div class="flex-1 h-1 bg-slate-800 overflow-hidden">
+                    <div class="h-full bg-green-500" :style="{ width: `${(st.evalMetrics.domain_accuracy ?? 0) * 100}%` }"></div>
+                  </div>
+                  <span class="text-green-400 w-8 text-right">{{ ((st.evalMetrics.domain_accuracy ?? 0) * 100).toFixed(0) }}%</span>
+                </div>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-slate-600">HumanEval</span>
+                <div class="flex items-center gap-1.5">
+                  <div class="flex-1 h-1 bg-slate-800 overflow-hidden">
+                    <div class="h-full bg-amber-500" :style="{ width: `${(st.evalMetrics.humaneval_score ?? 0) * 100}%` }"></div>
+                  </div>
+                  <span class="text-amber-400 w-8 text-right">{{ ((st.evalMetrics.humaneval_score ?? 0) * 100).toFixed(0) }}%</span>
+                </div>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-slate-600">Latency</span>
+                <span class="text-slate-300">+{{ st.evalMetrics.latency_overhead_ms }}ms</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pairs count (only if no training config panel) -->
+          <div v-if="st.pairsCount > 0 && !st.trainingConfig" class="flex items-center gap-2">
             <span class="text-xs text-slate-600">Training pairs:</span>
             <span class="text-xs font-mono text-amber-400">{{ st.pairsCount }}</span>
           </div>

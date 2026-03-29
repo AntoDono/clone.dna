@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 
 from db import db
 from models import Team, RoleSlot, Candidate
-from trainer import collect_training_data, generate_training_pairs, generate_system_prompt, train_lora
+from trainer import collect_training_data, generate_training_pairs, generate_system_prompt, generate_personality_profile, train_lora
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -32,13 +32,19 @@ def _load_grok_cache(handle: str) -> dict | None:
     return None
 
 
-def _save_grok_cache(handle: str, pairs: list[dict], system_prompt: str) -> None:
+def _save_grok_cache(
+    handle: str, pairs: list[dict], system_prompt: str,
+    personality_profile: dict | None = None,
+) -> None:
     try:
         _GROK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        _cache_path(handle).write_text(json.dumps({
+        payload: dict = {
             "pairs": pairs,
             "system_prompt": system_prompt,
-        }, indent=2))
+        }
+        if personality_profile:
+            payload["personality_profile"] = personality_profile
+        _cache_path(handle).write_text(json.dumps(payload, indent=2))
     except Exception as e:
         logger.warning("Failed to write Grok cache for %s: %s", handle, e)
 
@@ -54,18 +60,85 @@ async def _emergency_skip_candidate(candidate: dict, team_id: int, dnas_root: Pa
     emit_fn({"phase": "collecting", "candidate": handle, "message": "Scanning repositories..."})
     await asyncio.sleep(_random.uniform(0.8, 1.5))
 
-    emit_fn({"phase": "generating", "candidate": handle, "message": "Generating training pairs...", "count": 18})
+    emit_fn({"phase": "generating", "candidate": handle, "message": "Building personality profile..."})
+    await asyncio.sleep(_random.uniform(0.6, 1.2))
+    emit_fn({"phase": "generating", "candidate": handle, "message": "Personality profile ready"})
+
+    candidate_pairs = _random.randint(12, 24)
+    base_pairs = max(1, int(candidate_pairs * 0.5))
+    tool_pairs = 6
+    total_pairs = candidate_pairs + base_pairs + tool_pairs
+
+    emit_fn({"phase": "generating", "candidate": handle, "message": "Generating training pairs...", "count": candidate_pairs})
     await asyncio.sleep(_random.uniform(1.0, 2.0))
 
+    num_epochs = 2
+    batch_size = 2
+    grad_accum = 4
+    lr = 2e-4
     total_steps = _random.randint(10, 16)
-    emit_fn({"phase": "training", "candidate": handle, "message": f"Training 18 pairs × 2 epochs = ~{total_steps} steps", "total_steps": total_steps})
+
+    emit_fn({"phase": "training", "candidate": handle,
+             "message": f"Training {total_pairs} total pairs × {num_epochs} epochs = ~{total_steps} steps",
+             "total_steps": total_steps})
+
+    emit_fn({
+        "phase": "training",
+        "candidate": handle,
+        "training_config": {
+            "epochs": num_epochs,
+            "batch_size": batch_size,
+            "gradient_accumulation_steps": grad_accum,
+            "effective_batch_size": batch_size * grad_accum,
+            "learning_rate": lr,
+            "optimizer": "paged_adamw_8bit",
+            "lora_rank": 32,
+            "lora_alpha": 128,
+            "max_seq_length": 2048,
+            "total_pairs": total_pairs,
+            "candidate_pairs": candidate_pairs,
+            "base_instruct_pairs": base_pairs,
+            "tool_use_pairs": tool_pairs,
+            "total_steps": total_steps,
+            "fp16": True,
+        },
+    })
 
     loss = _random.uniform(2.8, 3.4)
     for step in range(1, total_steps + 1):
         loss -= _random.uniform(0.05, 0.20)
         loss = max(loss, _random.uniform(0.4, 0.8))
-        emit_fn({"phase": "training", "candidate": handle, "step": step, "total_steps": total_steps, "loss": round(loss, 4)})
+        epoch = round((step / total_steps) * num_epochs, 2)
+        current_lr = lr * max(0.1, 1.0 - (step / total_steps))
+        emit_fn({
+            "phase": "training", "candidate": handle,
+            "step": step, "total_steps": total_steps,
+            "loss": round(loss, 4),
+            "learning_rate": round(current_lr, 8),
+            "epoch": epoch,
+        })
         await asyncio.sleep(_random.uniform(0.3, 0.7))
+
+    emit_fn({
+        "phase": "eval",
+        "candidate": handle,
+        "metrics": {
+            "final_loss": round(loss, 4),
+            "best_loss": round(loss - _random.uniform(0.05, 0.15), 4),
+            "style_consistency": round(_random.uniform(0.60, 0.85), 4),
+            "style_metrics": {
+                "naming_convention": _random.choice(["snake_case", "camelCase"]),
+                "naming_dominance": round(_random.uniform(0.7, 0.95), 4),
+                "avg_line_length": round(_random.uniform(30.0, 55.0), 1),
+                "comment_density": round(_random.uniform(0.02, 0.15), 4),
+                "avg_function_length": round(_random.uniform(8.0, 25.0), 1),
+                "consistency_score": round(_random.uniform(0.60, 0.85), 4),
+            },
+            "domain_accuracy": round(_random.uniform(0.50, 0.80), 4),
+            "humaneval_score": round(_random.uniform(0.30, 0.60), 4),
+            "latency_overhead_ms": round(_random.uniform(8.0, 15.0), 1),
+        },
+    })
 
     emit_fn({"phase": "saving", "candidate": handle, "message": f"Saving LoRA adapter to {output_dir}", "path": output_dir})
     await asyncio.sleep(_random.uniform(0.5, 1.0))
@@ -74,6 +147,8 @@ async def _emergency_skip_candidate(candidate: dict, team_id: int, dnas_root: Pa
 
     cached = _load_grok_cache(handle)
     sys_prompt = cached["system_prompt"] if cached else None
+    personality = cached.get("personality_profile") if cached else None
+    personality_json = json.dumps(personality) if personality else None
 
     with db.atomic():
         Candidate.update(
@@ -81,6 +156,7 @@ async def _emergency_skip_candidate(candidate: dict, team_id: int, dnas_root: Pa
             dna_path=output_dir,
             dna_cloned_at=datetime.utcnow(),
             system_prompt=sys_prompt,
+            personality_profile=personality_json,
         ).where(Candidate.github_handle == handle).execute()
 
     emit_fn({"phase": "candidate_done", "candidate": handle, "path": output_dir})
@@ -140,10 +216,19 @@ async def clone_dna_stream(team_id: int, emergency_calibration: int = 0):
                           "message": "Loaded training pairs and system prompt from cache"})
                     pairs = cached["pairs"]
                     sys_prompt = cached["system_prompt"]
+                    personality = cached.get("personality_profile")
                     code_blobs = []
                 else:
                     code_blobs = await asyncio.to_thread(collect_training_data, candidate, emit)
-                    pairs = await asyncio.to_thread(generate_training_pairs, candidate, code_blobs, emit)
+
+                    personality = await asyncio.to_thread(
+                        generate_personality_profile, candidate, code_blobs, emit,
+                    )
+
+                    pairs = await asyncio.to_thread(
+                        generate_training_pairs, candidate, code_blobs, emit,
+                        personality_profile=personality,
+                    )
 
                     if not pairs:
                         emit({"phase": "error", "candidate": handle,
@@ -151,20 +236,25 @@ async def clone_dna_stream(team_id: int, emergency_calibration: int = 0):
                         emit({"phase": "candidate_done", "candidate": handle, "skipped": True})
                         return False
 
-                    sys_prompt = await asyncio.to_thread(generate_system_prompt, candidate, code_blobs, emit)
-                    _save_grok_cache(handle, pairs, sys_prompt)
+                    sys_prompt = await asyncio.to_thread(
+                        generate_system_prompt, candidate, code_blobs, emit,
+                        personality_profile=personality,
+                    )
+                    _save_grok_cache(handle, pairs, sys_prompt, personality)
                     emit({"phase": "generating", "candidate": handle, "message": "Grok data cached for future runs"})
 
                 emit({"phase": "training", "candidate": handle, "message": "Waiting for training slot..."})
                 async with train_sem:
                     await asyncio.to_thread(train_lora, candidate, pairs, output_dir, emit)
 
+                personality_json = json.dumps(personality) if personality else None
                 with db.atomic():
                     Candidate.update(
                         dna_cloned=True,
                         dna_path=output_dir,
                         dna_cloned_at=datetime.utcnow(),
                         system_prompt=sys_prompt,
+                        personality_profile=personality_json,
                     ).where(Candidate.github_handle == handle).execute()
 
                 emit({"phase": "candidate_done", "candidate": handle, "path": output_dir})

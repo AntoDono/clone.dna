@@ -79,7 +79,12 @@ export function useTeamChat(teamId: number, apiBase: string) {
   const streaming = ref(false)
   const streamingHandle = ref<string | null>(null)
   const isThinking = ref(false)
+  const useGrok = ref(false)
   let abortController: AbortController | null = null
+
+  function toggleGrok() {
+    useGrok.value = !useGrok.value
+  }
 
   function stopStreaming() {
     if (abortController) {
@@ -122,7 +127,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
       response = await fetch(`${apiBase}/teams/${teamId}/build/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ handle: key, message }),
+        body: JSON.stringify({ handle: key, message, use_grok: useGrok.value }),
         signal: abortController.signal,
       })
     } catch (e: any) {
@@ -244,7 +249,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
       response = await fetch(`${apiBase}/teams/${teamId}/build/orchestrate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, use_grok: useGrok.value }),
         signal: abortController.signal,
       })
     } catch (e: any) {
@@ -356,6 +361,8 @@ export function useTeamChat(teamId: number, apiBase: string) {
     streaming,
     streamingHandle,
     isThinking,
+    useGrok,
+    toggleGrok,
     sendMessage,
     stopStreaming,
     handleKeydown,
