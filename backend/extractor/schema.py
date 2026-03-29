@@ -269,6 +269,121 @@ def semantic_analyze_code(
         return None
 
 
+
+# ── Job-fit scoring ───────────────────────────────────────────────────────────
+
+class CandidateFitScore(BaseModel):
+    """Grok-scored fit assessment for a single candidate against a job description."""
+    handle: str = Field(description="GitHub handle of the candidate")
+    overall_score: int = Field(ge=0, le=100, description="Overall fit score 0-100")
+    technical_fit: int = Field(ge=0, le=100, description="Technical skill alignment 0-100")
+    domain_fit: int = Field(ge=0, le=100, description="Domain/industry expertise alignment 0-100")
+    seniority_match: int = Field(ge=0, le=100, description="Seniority level alignment 0-100")
+    reasoning: str = Field(description="1-2 sentence explanation of the overall score")
+    strengths: list[str] = Field(description="Top 3 candidate strengths relative to the JD")
+    gaps: list[str] = Field(description="Top 2 skill or experience gaps relative to the JD")
+
+
+class FitScoreResult(BaseModel):
+    """Ranked list of candidate fit scores against a job description."""
+    scores: list[CandidateFitScore]
+
+
+_FIT_SCORE_SYSTEM = """You are a senior technical recruiter and AI talent evaluator for Clone.dna.
+
+Score each candidate's fit against the provided job description across four dimensions:
+- technical_fit: how well their languages, frameworks, and tools match the JD requirements
+- domain_fit: how closely their problem domains (ML, fintech, infra, etc.) match the JD
+- seniority_match: whether their repo depth, follower count, and contribution history match the seniority expected
+- overall_score: weighted composite (40% technical, 35% domain, 25% seniority)
+
+Rules:
+- Be critical and specific — a 90+ score means the candidate is nearly perfect for the role
+- strengths: list exactly 3 specific, factual points tied to the JD
+- gaps: list exactly 2 honest gaps; "no obvious gaps" is not acceptable
+- reasoning: exactly 1-2 sentences, specific to this candidate and this JD
+
+Return a valid JSON object:
+{
+  "scores": [
+    {
+      "handle": "string",
+      "overall_score": int,
+      "technical_fit": int,
+      "domain_fit": int,
+      "seniority_match": int,
+      "reasoning": "string",
+      "strengths": ["string", "string", "string"],
+      "gaps": ["string", "string"]
+    },
+    ...
+  ]
+}"""
+
+
+def score_candidates_against_jd(
+    candidates: list[dict],
+    job_description: str,
+    role: str,
+) -> Optional[FitScoreResult]:
+    """
+    Score a list of candidate profiles against a job description using Grok.
+
+    Sends all candidates in a single structured Grok call — produces per-candidate
+    scores across technical fit, domain fit, and seniority match, plus ranked reasoning
+    and gap analysis. Returns None if Grok is unavailable or fewer than 1 candidate provided.
+    """
+    if not candidates:
+        return None
+    try:
+        client = get_grok_client()
+    except RuntimeError:
+        return None
+
+    role_context = ROLE_CONTEXT.get(role, "")
+    candidate_summaries = []
+    for c in candidates[:10]:
+        skills = ", ".join((c.get("skills") or [])[:6]) or "none listed"
+        domains = ", ".join((c.get("domain_expertise") or [])[:4]) or "none listed"
+        patterns = ", ".join((c.get("architectural_patterns") or [])[:3]) or "none listed"
+        langs = ", ".join(list((c.get("languages") or {}).keys())[:4]) or "unknown"
+        candidate_summaries.append(
+            f"Handle: {c.get('github_handle', 'unknown')}\n"
+            f"  Name: {c.get('name', '')}\n"
+            f"  Bio: {(c.get('bio') or '')[:150]}\n"
+            f"  Skills: {skills}\n"
+            f"  Domains: {domains}\n"
+            f"  Architecture patterns: {patterns}\n"
+            f"  Languages: {langs}\n"
+            f"  Followers: {c.get('followers', 0)} | Repos: {c.get('public_repos', 0)}\n"
+            f"  Role description: {c.get('description', '')}"
+        )
+
+    user_message = (
+        f"Role being hired for: {role.upper()}\n"
+        f"{role_context}\n\n"
+        f"--- JOB DESCRIPTION ---\n{job_description[:3000]}\n\n"
+        f"--- CANDIDATES ---\n" + "\n\n".join(candidate_summaries)
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=GROK_MODEL,
+            messages=[
+                {"role": "system", "content": _FIT_SCORE_SYSTEM},
+                {"role": "user",   "content": user_message},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.3,
+        )
+        raw = response.choices[0].message.content
+        data = json.loads(raw)
+        return FitScoreResult(**data)
+    except Exception as e:
+        print(f"[grok] fit scoring failed: {e}")
+        return None
+
+
 def candidate_extract_to_profile(extract: CandidateExtract, source_url: str = "") -> dict:
     """Convert a CandidateExtract Pydantic model to the flat profile dict shape used throughout the app."""
     return {

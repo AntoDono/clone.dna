@@ -252,12 +252,16 @@ def build_profile(handle: str, role: Optional[str] = None, force: bool = False) 
     top_repos: list[dict] = []
     lang_counts: dict[str, int] = {}
 
+    _PERMISSIVE_LICENSES = {"mit", "apache-2.0", "bsd-2-clause", "bsd-3-clause", "isc", "unlicense"}
+
     for repo in (repos_data if isinstance(repos_data, list) else []):
         if repo.get("fork"):
             continue
         lang = repo.get("language")
         if lang:
             lang_counts[lang] = lang_counts.get(lang, 0) + 1
+        license_obj = repo.get("license") or {}
+        license_id  = (license_obj.get("spdx_id") or "").lower()
         top_repos.append({
             "name":        repo["name"],
             "description": (repo.get("description") or "")[:120],
@@ -265,6 +269,8 @@ def build_profile(handle: str, role: Optional[str] = None, force: bool = False) 
             "language":    lang or "",
             "url":         repo.get("html_url", ""),
             "topics":      repo.get("topics", [])[:4],
+            "license":     license_obj.get("spdx_id") or "",
+            "permissive":  license_id in _PERMISSIVE_LICENSES,
         })
 
     top_repos = sorted(top_repos, key=lambda r: r["stars"], reverse=True)[:5]

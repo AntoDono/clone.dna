@@ -7,7 +7,7 @@
  * Props: teamId (number), slots (RoleSlot[])
  * Emits: done
  */
-import type { CandidateProfile, RoleSlot } from '~/composables/useApi'
+import type { CandidateProfile, RoleSlot, CandidateFitScore } from '~/composables/useApi'
 
 const props = defineProps<{
   teamId: number
@@ -33,6 +33,35 @@ const confirmError = ref('')
 const streamError = ref('')
 const fromCache = ref(false)
 const isRefetching = ref(false)
+
+// ── Fit scoring ───────────────────────────────────────────────────────────────
+const showScorePanel = ref(false)
+const jdInput = ref('')
+const scoring = ref(false)
+const scoreError = ref('')
+const fitScores = ref<Record<string, CandidateFitScore>>({})
+
+function fitScore(handle: string) {
+  return fitScores.value[handle] ?? null
+}
+
+async function runFitScore() {
+  const jd = jdInput.value.trim()
+  if (jd.length < 20) { scoreError.value = 'Add more detail to the job description'; return }
+  scoring.value = true
+  scoreError.value = ''
+  try {
+    const res = await api.scoreHeadhuntCandidates(props.teamId, jd, 'swe')
+    const map: Record<string, CandidateFitScore> = {}
+    for (const s of res.ranked) map[s.handle] = s
+    fitScores.value = map
+    showScorePanel.value = false
+  } catch (e: any) {
+    scoreError.value = e?.data?.detail ?? 'Scoring failed — check backend'
+  } finally {
+    scoring.value = false
+  }
+}
 
 const ROLES = [
   { key: 'pm',       label: 'Product Manager',  badge: 'PM',     need: 1 },
@@ -237,6 +266,18 @@ onUnmounted(() => es?.close())
             {{ isRefetching ? 'Fetching...' : '↺ Refetch' }}
           </button>
         </template>
+        <!-- Score for fit button (only when candidates are loaded) -->
+        <template v-if="phase === 'selecting'">
+          <button
+            class="text-xs border px-3 py-1 transition-colors"
+            :class="Object.keys(fitScores).length
+              ? 'border-green-600 text-green-400'
+              : 'border-slate-700 text-slate-400 hover:border-violet-500 hover:text-violet-400'"
+            @click="showScorePanel = true"
+          >
+            {{ Object.keys(fitScores).length ? '✓ Scored' : '◈ Score for Fit' }}
+          </button>
+        </template>
         <span v-if="streamError" class="text-xs text-red-400 max-w-sm truncate" :title="streamError">
           ⚠ {{ streamError }}
         </span>
@@ -347,6 +388,21 @@ onUnmounted(() => es?.close())
                   class="text-xs border border-slate-700 text-slate-600 px-1.5 py-0.5"
                 >{{ skill }}</span>
               </div>
+
+              <!-- Fit score badge -->
+              <div v-if="fitScore(candidate.github_handle)" class="mt-2 flex items-center gap-2">
+                <span
+                  class="text-xs font-bold px-2 py-0.5 border"
+                  :class="fitScore(candidate.github_handle)!.overall_score >= 80
+                    ? 'border-green-600 text-green-400 bg-green-950/40'
+                    : fitScore(candidate.github_handle)!.overall_score >= 60
+                      ? 'border-amber-600 text-amber-400 bg-amber-950/40'
+                      : 'border-slate-600 text-slate-400'"
+                >
+                  {{ fitScore(candidate.github_handle)!.overall_score }}/100
+                </span>
+                <span class="text-xs text-slate-600 truncate">{{ fitScore(candidate.github_handle)!.reasoning }}</span>
+              </div>
             </component>
           </TransitionGroup>
 
@@ -393,6 +449,40 @@ onUnmounted(() => es?.close())
           >
             {{ phase === 'confirming' ? 'Saving...' : 'Confirm Team →' }}
           </button>
+        </div>
+      </div>
+    </Transition>
+
+    <!-- ── Fit score panel ────────────────────────────────────────────────── -->
+    <Transition name="fade">
+      <div
+        v-if="showScorePanel"
+        class="absolute inset-0 bg-slate-950/80 flex items-center justify-center z-10"
+        @click.self="showScorePanel = false"
+      >
+        <div class="bg-slate-900 border border-slate-700 w-full max-w-lg p-6 space-y-4">
+          <div class="flex items-center justify-between">
+            <p class="text-white font-semibold">Score Candidates for Fit</p>
+            <button class="text-slate-500 hover:text-white" @click="showScorePanel = false">✕</button>
+          </div>
+          <p class="text-slate-500 text-xs">Paste a job description — Grok will score all candidates across technical fit, domain expertise, and seniority.</p>
+          <textarea
+            v-model="jdInput"
+            placeholder="We're hiring a senior backend engineer who lives in distributed systems, has built event-driven microservices, and has a strong open source presence..."
+            class="w-full h-36 bg-slate-950 border border-slate-700 focus:border-violet-500 text-sm text-slate-300 placeholder-slate-600 p-3 outline-none resize-none"
+          />
+          <p v-if="scoreError" class="text-red-400 text-xs">{{ scoreError }}</p>
+          <div class="flex justify-end gap-3">
+            <button class="text-sm text-slate-500 hover:text-white transition-colors" @click="showScorePanel = false">Cancel</button>
+            <button
+              class="px-5 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
+              :class="scoring ? 'bg-slate-700 text-slate-400' : 'bg-violet-600 text-white hover:bg-violet-500'"
+              :disabled="scoring"
+              @click="runFitScore"
+            >
+              {{ scoring ? 'Scoring with Grok...' : 'Score All Candidates →' }}
+            </button>
+          </div>
         </div>
       </div>
     </Transition>
