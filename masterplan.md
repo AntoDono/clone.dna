@@ -111,6 +111,15 @@ The DGX Spark is the mint — the .dna factory.
 - **Student adapter training:** Freeze base model, train LoRA adapter on synthetic data using PEFT + TRL with FlashAttention-2 and BF16
 - **Output:** Quantized, benchmarked, packaged .dna block published to registry
 
+**Synthetic data quality — the highest-variance step in the pipeline:**
+
+The teacher model's instruction-side prompt templates are the single most important quality lever in the entire pipeline. A weak prompt template produces generic, interchangeable instruction-response pairs that fail to capture a developer's idiosyncratic patterns — the adapter trains, but the style delta against the base model is negligible. We address this directly:
+
+- **Domain-conditioned prompting:** The teacher prompt is not generic ("what task produces this code?"). It is conditioned on the candidate's identified domain, detected framework stack, and inferred architectural vocabulary extracted during profile building. A distributed systems engineer's teacher prompt foregrounds CAP theorem tradeoffs, consistency guarantees, and failure mode analysis — because that's the register their code operates in.
+- **Iterated template validation:** Before full training runs, we generate 20–30 sample pairs per candidate and manually inspect whether the instruction side accurately describes the intent, context, and constraints that would produce the developer's actual code. Templates are revised until this spot-check passes. This costs 20–30 minutes per candidate during the warm-up window and is the highest-ROI pre-hackathon investment.
+- **Style consistency as the ground truth benchmark:** We hold out 15% of each developer's code from training and measure whether the adapter, given a prompt, generates code with statistically similar style fingerprints (naming conventions, comment density, error handling patterns, abstraction depth) to the held-out set. Target: 0.85+ style consistency. If a block scores below 0.80, we revise the teacher prompt templates and retrain before publishing to the registry.
+- **Reproducibility:** Every block ships with its exact teacher prompt template in the training config.json. Not just the LoRA hyperparameters — the full prompt design, so the quality of the instruction generation step is auditable and improvable over time.
+
 **Training hyperparameters (fully reproducible):**
 LoRA rank=64, alpha=128, dropout=0.05, target modules: q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj. Optimizer: AdamW (lr=1e-4, weight_decay=0.01, betas=(0.9, 0.999)). Batch size=8, 2 epochs, warmup ratio=0.03, max sequence length=4096. Every .dna block ships with its exact training config.json for full reproducibility.
 
@@ -213,7 +222,8 @@ agent.build("""
         "style_consistency": 0.87,
         "domain_accuracy": 0.93,
         "latency_overhead_ms": 12,
-        "teacher_model": "llama-3-70b"
+        "teacher_model": "llama-3-70b",
+        "teacher_prompt_template_version": "v2.1"
     }
 }
 ```
@@ -266,9 +276,24 @@ This team has shipped production-grade ML and hardware systems in under 24 hours
 
 ### Hybrid Execution Strategy
 
-Heavy training and minting of demo .dna blocks runs on the DGX Spark (70B teacher + adapter training). Runtime, Headhunter agent, Project Assembly, and Registry run locally or on a lightweight instance using pre-exported .dna files and vLLM. This guarantees zero DGX contention risk during final demo polish. The full end-to-end pipeline has been pre-validated on a local DGX Spark replica during the pre-hackathon warm-up window; all three demo .dna blocks are already minted and ready.
+Heavy training and minting of demo .dna blocks runs on the DGX Spark (70B teacher + adapter training). Runtime, Headhunter agent, Project Assembly, and Registry run locally or on a lightweight instance using pre-exported .dna files and vLLM. This guarantees zero DGX contention risk during final demo polish.
+
+**Pre-hackathon validation checklist (completed during warm-up window):**
+- All three demo .dna blocks minted, exported, and benchmark-verified
+- Blocks loaded into the actual demo environment (not just the training environment) and confirmed to serve correctly via vLLM's dynamic adapter API
+- End-to-end inference tested on demo hardware: adapter loads, generates output, swaps cleanly — before the clock starts
+- Teacher prompt templates validated via spot-check (20–30 sample pairs per candidate, style consistency ≥ 0.85)
+
+The distinction between "minted" and "loadable in the demo environment" matters. A block that trains successfully but fails to load under vLLM on demo hardware is a dead block. Both conditions are verified during the warm-up window.
 
 ### Build Plan
+
+**Phase 0 — Pre-Hackathon Warm-Up (Before Clock Starts)**
+
+- Validate all three demo .dna blocks are loadable in the actual demo environment (not just training env) — **this is the single most important pre-hackathon task**
+- Spot-check teacher prompt templates: 20–30 sample pairs per candidate, confirm instruction side accurately describes the intent and constraints of the developer's actual code
+- Revise and re-validate any template scoring below 0.80 style consistency
+- Pre-cache candidate GitHub repos with authenticated API tokens
 
 **Phase 1 — Foundation (Hours 0–4)**
 
@@ -292,7 +317,15 @@ Heavy training and minting of demo .dna blocks runs on the DGX Spark (70B teache
 - Project Agent: receives task, selects experts, swaps .dna blocks (Youwei) — deliverable: agent building projects with expert blocks
 - Multi-step demo: agent assembles team, builds project (Youwei + Sean) — deliverable: end-to-end demo
 - Talent Registry frontend (Heewon) — deliverable: working web UI
-- PMF: approach other teams, offer DNA Blocks API (All) — deliverable: external teams using our backend
+- **PMF outreach begins by Hour 10** — approach other teams, offer a .dna block minted from a GitHub user of their choice in 30 minutes. This is not a stretch goal; it is a core demo asset (see Section 13)
+
+**Hour 8 Scope Gate — Explicit Cut Decision**
+
+At Hour 8, the team makes an explicit go/no-go on scope. If the training pipeline, runtime wrapper, and Headhunter agent core are not all green by Hour 8, the following are cut or simplified in this order:
+1. **Registry frontend** → replaced with a CLI-accessible registry demo (the backend API still runs; the UI is cosmetic for the demo)
+2. **Project Agent multi-step routing** → replaced with a manual two-block swap demo showing the same hot-swap behavior more simply
+
+This decision is made at Hour 8, not Hour 20. Deciding at Hour 20 means both paths fail. Deciding at Hour 8 means one path succeeds cleanly.
 
 **Phase 4 — Polish (Hours 18–24)**
 
@@ -303,20 +336,29 @@ Heavy training and minting of demo .dna blocks runs on the DGX Spark (70B teache
 
 ### What We Demo On Stage
 
-1. **"Meet the Headhunter"** — the agent searches GitHub for a backend expert, analyzes their repos, scores their patterns, builds a profile
-2. **"Minting DNA"** — the .dna block trains live on DGX using their actual code (or the pre-minted block if time is tight)
-3. **"Loading the fingerprint"** — load the .dna block into vLLM, ask a domain-specific technical question, show it responds in the candidate's register with their architectural vocabulary
-4. **"Building with DNA"** — the Project Agent receives a task, selects the right .dna blocks, swaps between experts, builds the project phase by phase
-5. **"Try before you hire"** — side-by-side: generic model vs. loaded .dna expert on the same coding task. Measurable style and domain consistency difference
-6. **"The Registry"** — browse the talent registry, view candidate profiles, benchmark scores, download .dna blocks
-7. **"Other teams built on this"** — show other hackathon teams using our API live
+**Demo opens with PMF, not benchmarks. This is the strongest possible opening.**
+
+1. **"Three teams in this room built on this tonight"** — open by naming the teams that used DNA Blocks during the hackathon, what they built, and that they evaluated expertise they could never have accessed through a traditional hiring process. Real users, real output, real validation — in the room, during the event. Walk on stage with this number. It is a stronger opening than any benchmark chart.
+
+2. **"Meet the Headhunter"** — the agent searches GitHub for a backend expert, analyzes their repos, scores their patterns, builds a profile
+
+3. **"Minting DNA"** — the .dna block trains live on DGX using their actual code (or the pre-minted block if time is tight — pre-minted fallback is always ready)
+
+4. **"Loading the fingerprint"** — load the .dna block into vLLM, ask a domain-specific technical question, show it responds in the candidate's register with their architectural vocabulary
+
+5. **"Building with DNA"** — the Project Agent receives a task, selects the right .dna blocks, swaps between experts, builds the project phase by phase
+
+6. **"Try before you hire"** — side-by-side: generic model vs. loaded .dna expert on the same coding task. Measurable style and domain consistency difference
+
+7. **"The Registry"** — browse the talent registry, view candidate profiles, benchmark scores, download .dna blocks
 
 ### Milestones
 
 - Hour 4: vLLM serving on DGX, 70B teacher loaded, format spec done, GitHub scraper working
-- Hour 10: 3 DNA blocks trained and exported, registry live with UI, headhunter finding candidates
-- Hour 16: Project agent routing working, other teams onboarded
-- Hour 24: Polished demo, benchmarks ready, presentation-ready
+- Hour 8: **Scope gate** — explicit cut decision on registry frontend and Project Agent complexity
+- Hour 10: 3 DNA blocks trained and exported, registry live with API, headhunter finding candidates, PMF outreach to other teams underway
+- Hour 16: Project agent routing working (or simplified swap demo), other teams onboarded and building
+- Hour 24: Polished demo, benchmarks ready, presentation-ready, PMF count confirmed
 
 ---
 
@@ -475,14 +517,21 @@ We are the same crew that has won 10+ major hackathons in the last 12 months und
 - Sean → .dna format, packaging CLI, vLLM runtime wrapper, registry backend
 - Heewon → Headhunter agent, Project Agent, registry frontend
 - Kaden → DGX stability, benchmarking, final demo polish
-- All → PMF outreach to other teams, demo video, pitch
+- All → PMF outreach to other teams (begins Hour 10), demo video, pitch
+
+### Critical Path
+
+Youwei's DGX setup in Hours 0–4 is the single blocking dependency for the entire training pipeline that Sean and Heewon's work ultimately serves. If DGX memory pressure appears in Hours 0–4, Kaden is the immediate escalation — not an end-of-hackathon problem. Fallback: pre-minted blocks loaded from the warm-up window carry the demo if the live training pipeline hits issues.
 
 ---
 
 ## 11. Risk Assessment
 
 **DGX setup and 70B teacher memory pressure**
-Mitigation: vLLM + INT8 quantization fits within 128GB unified memory. Team has run equivalent 70B-scale inference on Cerebras wafer-scale engines at HackMIT. All three demo .dna blocks pre-minted during warm-up window as fallback.
+Mitigation: vLLM + INT8 quantization fits within 128GB unified memory. Team has run equivalent 70B-scale inference on Cerebras wafer-scale engines at HackMIT. All three demo .dna blocks pre-minted AND verified loadable in the demo environment during warm-up window. "Minted" and "loadable in the demo environment" are treated as separate conditions — both verified before clock starts.
+
+**Synthetic data quality from the 70B teacher**
+This is the highest-variance step in the pipeline and receives explicit treatment. Teacher prompt templates are domain-conditioned (not generic), spot-checked via 20–30 sample pairs per candidate before training runs, and validated against a 0.85+ style consistency threshold on held-out code. If a block scores below 0.80, the template is revised and the block is retrained before it touches the registry. Every block ships with its exact teacher prompt template version in training config.json for full auditability.
 
 **.dna blocks do not adequately capture style**
 Mitigation: We benchmark style consistency explicitly (target: 0.85+ on held-out code from the same developer). The demo includes a quantitative side-by-side. If the delta is smaller than expected, we show it honestly and frame it as v1 — the improvement curve is the pitch, not perfection at launch.
@@ -491,16 +540,19 @@ Mitigation: We benchmark style consistency explicitly (target: 0.85+ on held-out
 Mitigation: Pre-cached repos with authenticated API tokens. Backup candidate repos pre-downloaded before hackathon start.
 
 **IP and licensing of public-work-derived adapters**
-Mitigation: Only MIT/Apache-licensed repos, filtered at ingestion. Opt-in consent required before minting. sources.json and consent.json are mandatory fields in the .dna spec. Adapter training constitutes transformative use — output is floating-point weights, not a distribution of source code. Consent-first architecture is the posture any enterprise legal team can approve today, and the one that survives the legal landscape evolving in either direction.
+Mitigation: Only MIT/Apache-licensed repos, filtered at ingestion. Opt-in consent required before minting. sources.json and consent.json are mandatory fields in the .dna spec. Adapter training constitutes transformative use — output is floating-point weights, not a distribution of source code. Consent-first architecture is the posture any enterprise legal team can approve today.
 
 **Ethical concerns about coding style capture**
 Mitigation: Consent-first architecture is a hard technical requirement, not a policy note. Revocation rights are live in v1. The block is an executable benchmark, not an identity simulation. This is addressed directly in Section 8.
 
-**Other teams don't adopt the API**
-Mitigation: Demo is 100% self-sufficient. PMF outreach is pure upside. We build it anyway.
+**Scope overrun**
+Mitigation: Explicit scope gate at Hour 8. Registry frontend and Project Agent multi-step routing are identified as the first cuts. Decision made at Hour 8, not Hour 20. Two clear fallback demo paths defined before the clock starts so the team never debates scope under pressure.
 
 **Sequential hot-swapping instability**
 Mitigation: vLLM dynamic adapter API is production-tested at scale. Team has shipped similar multi-model routing in prior wins.
+
+**Other teams don't adopt the API**
+Mitigation: Demo is 100% self-sufficient. PMF outreach begins at Hour 10 with a concrete offer: mint a .dna block from a GitHub user of their choice in 30 minutes. Pure upside — but pursued aggressively because walking on stage with real adoption is the strongest possible opening.
 
 ---
 
@@ -520,7 +572,7 @@ Any competitor minting LoRA adapters from public code without an explicit consen
 
 **Layer 3: The compute requirement is a quality gate, not a cost barrier.**
 
-DGX-class hardware is rentable. That's a feature, not a limitation — it means minting scales globally without owned infrastructure. The moat is not hardware access. It is what the hardware requirement filters out. Producing a .dna block worth putting in a hiring registry — one a company will trust to evaluate a $150K hiring decision — requires a 70B teacher pipeline with iterated prompt templates, tuned training configs, and calibrated domain benchmarks. That pipeline takes real investment to build and improve. A competitor can fork the format spec in a weekend. They cannot fork the accumulated minting quality. Every block we train improves our benchmark calibration and teacher prompt design. By the time a fast-follower ships v1, we are on v3 of the pipeline — and the quality delta is visible in the eval scores on every block in the registry. That quality floor is what makes the registry trustworthy as a hiring signal. A flooded registry of low-quality blocks is worthless. A curated registry where every block has a verifiable quality floor is the product. The compute requirement enforces that floor.
+DGX-class hardware is rentable. That's a feature, not a limitation — it means minting scales globally without owned infrastructure. The moat is not hardware access. It is what the hardware requirement filters out. Producing a .dna block worth putting in a hiring registry — one a company will trust to evaluate a $150K hiring decision — requires a 70B teacher pipeline with iterated, domain-conditioned prompt templates, tuned training configs, and calibrated domain benchmarks. That pipeline takes real investment to build and improve. A competitor can fork the format spec in a weekend. They cannot fork the accumulated minting quality. Every block we train improves our benchmark calibration and teacher prompt design. By the time a fast-follower ships v1, we are on v3 of the pipeline — and the quality delta is visible in the eval scores on every block in the registry. That quality floor is what makes the registry trustworthy as a hiring signal. A flooded registry of low-quality blocks is worthless. A curated registry where every block has a verifiable quality floor is the product. The compute requirement enforces that floor.
 
 The Docker analogy holds precisely because of this structure: Docker didn't win on the spec. It won on Hub liquidity, tooling ecosystem, and enterprise trust — built over time, in that order. DNA Blocks is running the same playbook: open format, proprietary registry, consent moat, compute quality gate.
 
@@ -547,11 +599,13 @@ DNA Blocks changes what the evaluation step produces. Instead of a ranked list o
 
 ### Hackathon PMF Strategy
 
-Our PMF evidence will not be a theoretical enterprise customer. It will be the other teams at this hackathon.
+PMF evidence will not be a theoretical enterprise customer. It will be the other teams at this hackathon — and it is the opening line of the demo, not a footnote.
 
-Deploy the registry first. Approach three or more teams building consumer apps with a specific offer: give us a GitHub username of a developer whose coding style you want to work with. We mint a .dna block from their public work in 30 minutes on the DGX. Your agent codes in their patterns.
+**The offer:** Starting at Hour 10, approach teams building consumer apps with a specific, concrete proposition — give us a GitHub username of a developer whose coding style you want to work with. We mint a .dna block from their public work in 30 minutes on the DGX. Your agent codes in their patterns.
 
-We walk on stage saying three other teams in this room built their projects using DNA Blocks. They evaluated expertise they could never have accessed through a traditional hiring process. Real users, real output, real validation — during a hackathon.
+**Why this is the demo opener:** Walking on stage saying "three other teams in this room built their projects using DNA Blocks tonight" is a stronger opening than any benchmark number. It answers the hardest question before the judges ask it — does anyone actually want this? The answer is in the room, live, during the event. Every team that adopts the API is both a user and a proof point. The PMF count is the headline metric we carry into the pitch.
+
+**The target:** Three or more teams. Outreach starts at Hour 10, not after the demo is polished. If we have two teams by Hour 16, we push harder. If we have four, we open with that number.
 
 ---
 
