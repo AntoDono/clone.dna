@@ -242,46 +242,46 @@ onUnmounted(() => es?.close())
 
 <template>
   <Teleport to="body">
-  <div class="fixed inset-0 z-[200] flex flex-col bg-slate-950 overflow-hidden">
+  <div class="fixed inset-0 z-[200] flex flex-col bg-parchment overflow-hidden">
 
     <!-- ── Header ─────────────────────────────────────────────────────────── -->
-    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-slate-800 bg-slate-950">
+    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-border bg-card">
       <div class="flex items-center gap-4">
-        <span class="text-lg font-bold text-white tracking-tight">Clone.dna</span>
-        <span class="text-slate-600">|</span>
-        <span v-if="!overallDone && !allCandidatesDone" class="text-slate-300 text-sm font-medium flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+        <span class="text-[17px] font-bold text-ink tracking-tight">Clone.dna</span>
+        <span class="text-mid">|</span>
+        <span v-if="!overallDone && !allCandidatesDone" class="text-stone text-sm font-medium flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-forest-mid animate-pulse"></span>
           Cloning DNA<span class="dots-anim"></span>
         </span>
-        <span v-else class="text-green-400 text-sm font-semibold flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-green-400"></span>
+        <span v-else class="text-forest text-sm font-semibold flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-forest"></span>
           DNA Cloned
         </span>
       </div>
 
       <div class="flex items-center gap-4">
-        <span v-if="streamError" class="text-xs text-red-400">{{ streamError }}</span>
-        <span class="text-xs text-slate-600">
+        <span v-if="streamError" class="text-xs text-danger">{{ streamError }}</span>
+        <span class="font-mono text-xs text-muted">
           {{ states.filter(s => s.phase === 'done').length }}/{{ states.length }} complete
         </span>
       </div>
     </div>
 
     <!-- ── Candidate cards grid ───────────────────────────────────────────── -->
-    <div class="flex-1 overflow-y-auto p-6 bg-slate-950">
+    <div class="flex-1 overflow-y-auto p-6 bg-parchment">
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-5xl mx-auto">
         <div
           v-for="st in states"
           :key="st.candidate.github_handle"
-          class="border bg-slate-900/60 p-5 flex flex-col gap-4 transition-colors"
+          class="border bg-card p-5 flex flex-col gap-4 rounded transition-colors shadow-soft"
           :class="{
-            'border-green-700/60': st.phase === 'done',
-            'border-red-700/60': st.phase === 'error',
-            'border-slate-700/40': st.phase === 'waiting' || st.phase === 'skipped',
-            'border-blue-700/60': st.phase === 'training',
-            'border-cyan-700/60': st.phase === 'eval',
-            'border-amber-700/40': st.phase === 'collecting' || st.phase === 'generating',
-            'border-purple-700/40': st.phase === 'saving',
+            'border-forest/50': st.phase === 'done',
+            'border-danger/50': st.phase === 'error',
+            'border-border': st.phase === 'waiting' || st.phase === 'skipped',
+            'border-blue-400/60': st.phase === 'training',
+            'border-cyan-400/60': st.phase === 'eval',
+            'border-amber-warm/40': st.phase === 'collecting' || st.phase === 'generating',
+            'border-mid': st.phase === 'saving',
           }"
         >
           <!-- Candidate identity -->
@@ -290,63 +290,61 @@ onUnmounted(() => es?.close())
               v-if="st.candidate.avatar_url"
               :src="st.candidate.avatar_url"
               :alt="st.candidate.name"
-              class="w-10 h-10 object-cover flex-shrink-0 border border-slate-700"
-              :class="st.phase === 'done' ? 'grayscale-0' : 'grayscale'"
+              class="w-10 h-10 object-cover flex-shrink-0 border border-border rounded"
+              :class="st.phase === 'done' ? '' : 'grayscale opacity-60'"
             />
             <div
               v-else
-              class="w-10 h-10 flex-shrink-0 bg-slate-800 border border-slate-700 flex items-center justify-center text-sm font-bold text-slate-400"
+              class="w-10 h-10 flex-shrink-0 bg-subtle border border-border rounded flex items-center justify-center text-sm font-bold text-muted"
             >
               {{ (st.candidate.name ?? '?')[0]?.toUpperCase() }}
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center gap-2">
-                <p class="text-sm font-semibold text-white truncate">
+                <p class="text-sm font-semibold text-ink truncate">
                   {{ st.candidate.name || st.candidate.github_handle }}
                 </p>
                 <span
-                  class="text-xs font-bold px-1.5 py-0.5 border flex-shrink-0"
+                  class="font-mono text-[10px] font-bold px-1.5 py-0.5 border rounded flex-shrink-0"
                   :class="{
-                    'border-amber-700 text-amber-400': st.role === 'pm',
-                    'border-blue-700 text-blue-400': st.role === 'swe',
-                    'border-purple-700 text-purple-400': st.role === 'designer',
+                    'border-amber-warm/60 text-amber-warm bg-amber-light': st.role === 'pm',
+                    'border-blue-400 text-blue-700 bg-blue-50': st.role === 'swe',
+                    'border-purple-400 text-purple-700 bg-purple-50': st.role === 'designer',
                   }"
                 >{{ ROLE_BADGE[st.role] ?? st.role.toUpperCase() }}</span>
               </div>
-              <p class="text-xs text-slate-500 truncate">@{{ st.candidate.github_handle }}</p>
+              <p class="font-mono text-xs text-muted truncate">@{{ st.candidate.github_handle }}</p>
             </div>
             <!-- Phase badge -->
             <span
-              class="text-xs font-medium px-2 py-1 border flex-shrink-0"
+              class="font-mono text-[10px] font-medium px-2 py-1 border rounded flex-shrink-0"
               :class="{
-                'border-green-700 text-green-400 bg-green-950/30': st.phase === 'done',
-                'border-red-700 text-red-400 bg-red-950/30': st.phase === 'error',
-                'border-slate-700 text-slate-500': st.phase === 'waiting',
-                'border-blue-700 text-blue-400 bg-blue-950/30 animate-pulse': st.phase === 'training',
-                'border-cyan-700 text-cyan-400 bg-cyan-950/30': st.phase === 'eval',
-                'border-amber-700/60 text-amber-400/80': st.phase === 'collecting' || st.phase === 'generating',
-                'border-purple-700/60 text-purple-400/80': st.phase === 'saving',
-                'border-slate-700 text-slate-600': st.phase === 'skipped',
+                'border-forest/50 text-forest-text bg-forest-light': st.phase === 'done',
+                'border-danger/50 text-danger bg-danger-light': st.phase === 'error',
+                'border-border text-muted bg-subtle': st.phase === 'waiting',
+                'border-blue-400/60 text-blue-700 bg-blue-50 animate-pulse': st.phase === 'training',
+                'border-cyan-400/60 text-cyan-700 bg-cyan-50': st.phase === 'eval',
+                'border-amber-warm/40 text-amber-warm bg-amber-light': st.phase === 'collecting' || st.phase === 'generating',
+                'border-mid text-stone bg-subtle': st.phase === 'saving',
+                'border-border text-muted': st.phase === 'skipped',
               }"
             >{{ phaseLabel(st.phase) }}</span>
           </div>
 
-
-
           <!-- Status message -->
-          <p class="text-xs text-slate-500 font-mono leading-relaxed min-h-[1.2rem]">
+          <p class="text-xs text-muted font-mono leading-relaxed min-h-[1.2rem]">
             {{ st.message }}
           </p>
 
           <!-- Training config panel -->
-          <div v-if="st.trainingConfig" class="bg-slate-950/60 border border-slate-800 px-3 py-2">
+          <div v-if="st.trainingConfig" class="bg-subtle border border-border rounded px-3 py-2">
             <div class="grid grid-cols-4 gap-x-4 gap-y-1 text-xs font-mono">
-              <div><span class="text-slate-600">Epochs:</span> <span class="text-slate-300">{{ st.trainingConfig.epochs }}</span></div>
-              <div><span class="text-slate-600">LR:</span> <span class="text-slate-300">{{ st.trainingConfig.learning_rate }}</span></div>
-              <div><span class="text-slate-600">Batch:</span> <span class="text-slate-300">{{ st.trainingConfig.batch_size }}×{{ st.trainingConfig.gradient_accumulation_steps }}</span></div>
-              <div><span class="text-slate-600">LoRA:</span> <span class="text-slate-300">r{{ st.trainingConfig.lora_rank }}/a{{ st.trainingConfig.lora_alpha }}</span></div>
+              <div><span class="text-muted">Epochs:</span> <span class="text-ink">{{ st.trainingConfig.epochs }}</span></div>
+              <div><span class="text-muted">LR:</span> <span class="text-ink">{{ st.trainingConfig.learning_rate }}</span></div>
+              <div><span class="text-muted">Batch:</span> <span class="text-ink">{{ st.trainingConfig.batch_size }}×{{ st.trainingConfig.gradient_accumulation_steps }}</span></div>
+              <div><span class="text-muted">LoRA:</span> <span class="text-ink">r{{ st.trainingConfig.lora_rank }}/a{{ st.trainingConfig.lora_alpha }}</span></div>
             </div>
-            <div class="text-xs font-mono text-slate-500 mt-1">
+            <div class="text-xs font-mono text-muted mt-1">
               Pairs: {{ st.trainingConfig.candidate_pairs }} candidate + {{ st.trainingConfig.base_instruct_pairs }} base + {{ st.trainingConfig.tool_use_pairs }} tool = {{ st.trainingConfig.total_pairs }} total
             </div>
           </div>
@@ -354,31 +352,31 @@ onUnmounted(() => es?.close())
           <!-- Training progress -->
           <div v-if="st.phase === 'training' || st.phase === 'eval' || (st.phase !== 'waiting' && st.totalSteps > 0)">
             <div class="flex items-center justify-between mb-1.5">
-              <span class="text-xs text-slate-600">
+              <span class="text-xs text-muted font-mono">
                 <template v-if="st.epoch !== null">Epoch {{ st.epoch }}/{{ st.trainingConfig?.epochs ?? 2 }} · </template>
                 Step {{ st.step }}/{{ st.totalSteps }}
               </span>
               <div class="flex items-center gap-3">
-                <span v-if="st.learningRate !== null" class="text-xs font-mono text-slate-500">
+                <span v-if="st.learningRate !== null" class="text-xs font-mono text-muted">
                   lr {{ st.learningRate.toExponential(1) }}
                 </span>
-                <span v-if="st.loss !== null" class="text-xs font-mono text-blue-400">
+                <span v-if="st.loss !== null" class="text-xs font-mono text-blue-600">
                   loss {{ st.loss.toFixed(4) }}
                 </span>
-                <span v-if="st.bestLoss !== null && st.loss !== st.bestLoss" class="text-xs font-mono text-green-400">
+                <span v-if="st.bestLoss !== null && st.loss !== st.bestLoss" class="text-xs font-mono text-forest">
                   best {{ st.bestLoss.toFixed(4) }}
                 </span>
               </div>
             </div>
-            <div class="h-1 bg-slate-800 overflow-hidden">
+            <div class="h-1 bg-subtle rounded-full overflow-hidden">
               <div
-                class="h-full transition-all duration-300 ease-out"
+                class="h-full transition-all duration-300 ease-out rounded-full"
                 :class="{
                   'bg-blue-500': st.phase === 'training',
-                  'bg-green-500': st.phase === 'done',
-                  'bg-red-500': st.phase === 'error',
+                  'bg-forest': st.phase === 'done',
+                  'bg-danger': st.phase === 'error',
                   'bg-cyan-500': st.phase === 'eval',
-                  'bg-slate-600': st.phase === 'saving',
+                  'bg-mid': st.phase === 'saving',
                 }"
                 :style="{ width: `${['done', 'eval', 'saving'].includes(st.phase) ? 100 : progressPct(st)}%` }"
               ></div>
@@ -387,65 +385,65 @@ onUnmounted(() => es?.close())
 
           <!-- Collecting / generating progress placeholder -->
           <div v-else-if="['collecting', 'generating'].includes(st.phase)">
-            <div class="h-1 bg-slate-800 overflow-hidden">
-              <div class="h-full bg-amber-500/60 animate-indeterminate"></div>
+            <div class="h-1 bg-subtle rounded-full overflow-hidden">
+              <div class="h-full bg-amber-warm/50 rounded-full animate-indeterminate"></div>
             </div>
           </div>
 
           <!-- Eval metrics panel -->
-          <div v-if="st.evalMetrics" class="bg-slate-950/60 border border-slate-800 px-3 py-2">
-            <p class="text-xs text-slate-500 mb-1.5 font-medium">Evaluation Metrics</p>
+          <div v-if="st.evalMetrics" class="bg-subtle border border-border rounded px-3 py-2">
+            <p class="text-xs text-muted mb-1.5 font-semibold uppercase tracking-wider">Evaluation Metrics</p>
             <div class="grid grid-cols-4 gap-x-4 gap-y-1.5 text-xs font-mono">
               <div class="flex flex-col">
-                <span class="text-slate-600">Style</span>
+                <span class="text-muted">Style</span>
                 <div class="flex items-center gap-1.5">
-                  <div class="flex-1 h-1 bg-slate-800 overflow-hidden">
-                    <div class="h-full bg-cyan-500" :style="{ width: `${(st.evalMetrics.style_consistency ?? 0) * 100}%` }"></div>
+                  <div class="flex-1 h-1 bg-hover rounded-full overflow-hidden">
+                    <div class="h-full bg-cyan-500 rounded-full" :style="{ width: `${(st.evalMetrics.style_consistency ?? 0) * 100}%` }"></div>
                   </div>
-                  <span class="text-cyan-400 w-8 text-right">{{ ((st.evalMetrics.style_consistency ?? 0) * 100).toFixed(0) }}%</span>
+                  <span class="text-cyan-700 w-8 text-right">{{ ((st.evalMetrics.style_consistency ?? 0) * 100).toFixed(0) }}%</span>
                 </div>
               </div>
               <div class="flex flex-col">
-                <span class="text-slate-600">Domain</span>
+                <span class="text-muted">Domain</span>
                 <div class="flex items-center gap-1.5">
-                  <div class="flex-1 h-1 bg-slate-800 overflow-hidden">
-                    <div class="h-full bg-green-500" :style="{ width: `${(st.evalMetrics.domain_accuracy ?? 0) * 100}%` }"></div>
+                  <div class="flex-1 h-1 bg-hover rounded-full overflow-hidden">
+                    <div class="h-full bg-forest rounded-full" :style="{ width: `${(st.evalMetrics.domain_accuracy ?? 0) * 100}%` }"></div>
                   </div>
-                  <span class="text-green-400 w-8 text-right">{{ ((st.evalMetrics.domain_accuracy ?? 0) * 100).toFixed(0) }}%</span>
+                  <span class="text-forest w-8 text-right">{{ ((st.evalMetrics.domain_accuracy ?? 0) * 100).toFixed(0) }}%</span>
                 </div>
               </div>
               <div class="flex flex-col">
-                <span class="text-slate-600">HumanEval</span>
+                <span class="text-muted">HumanEval</span>
                 <div class="flex items-center gap-1.5">
-                  <div class="flex-1 h-1 bg-slate-800 overflow-hidden">
-                    <div class="h-full bg-amber-500" :style="{ width: `${(st.evalMetrics.humaneval_score ?? 0) * 100}%` }"></div>
+                  <div class="flex-1 h-1 bg-hover rounded-full overflow-hidden">
+                    <div class="h-full bg-amber-warm/70 rounded-full" :style="{ width: `${(st.evalMetrics.humaneval_score ?? 0) * 100}%` }"></div>
                   </div>
-                  <span class="text-amber-400 w-8 text-right">{{ ((st.evalMetrics.humaneval_score ?? 0) * 100).toFixed(0) }}%</span>
+                  <span class="text-amber-warm w-8 text-right">{{ ((st.evalMetrics.humaneval_score ?? 0) * 100).toFixed(0) }}%</span>
                 </div>
               </div>
               <div class="flex flex-col">
-                <span class="text-slate-600">Latency</span>
-                <span class="text-slate-300">+{{ st.evalMetrics.latency_overhead_ms }}ms</span>
+                <span class="text-muted">Latency</span>
+                <span class="text-ink">+{{ st.evalMetrics.latency_overhead_ms }}ms</span>
               </div>
             </div>
           </div>
 
           <!-- Pairs count (only if no training config panel) -->
           <div v-if="st.pairsCount > 0 && !st.trainingConfig" class="flex items-center gap-2">
-            <span class="text-xs text-slate-600">Training pairs:</span>
-            <span class="text-xs font-mono text-amber-400">{{ st.pairsCount }}</span>
+            <span class="text-xs text-muted">Training pairs:</span>
+            <span class="text-xs font-mono text-amber-warm">{{ st.pairsCount }}</span>
           </div>
 
           <!-- Final path -->
           <div v-if="st.path" class="mt-1">
-            <p class="text-xs text-slate-600 mb-1">Saved to:</p>
-            <code class="text-xs text-green-400 font-mono bg-slate-950/60 border border-slate-800 px-2 py-1 block truncate">
+            <p class="text-xs text-muted mb-1">Saved to:</p>
+            <code class="text-xs text-forest-text font-mono bg-forest-light border border-forest/20 px-2 py-1 block truncate rounded">
               {{ st.path }}
             </code>
           </div>
 
           <!-- Error detail -->
-          <div v-if="st.error" class="text-xs text-red-400 font-mono bg-red-950/20 border border-red-800/40 px-2 py-1">
+          <div v-if="st.error" class="text-xs text-danger font-mono bg-danger-light border border-danger/30 px-2 py-1 rounded">
             {{ st.error }}
           </div>
         </div>
@@ -456,21 +454,21 @@ onUnmounted(() => es?.close())
     <Transition name="fade">
       <div
         v-if="allCandidatesDone || overallDone"
-        class="flex-shrink-0 border-t border-slate-800 bg-slate-900/80 px-8 py-4 flex items-center justify-between"
+        class="flex-shrink-0 border-t border-border bg-card px-8 py-4 flex items-center justify-between"
       >
         <div class="text-sm">
-          <span class="text-green-400 font-medium">
+          <span class="text-forest font-medium">
             {{ states.filter(s => s.phase === 'done').length }} DNA blocks saved
           </span>
-          <span v-if="states.some(s => s.phase === 'error')" class="text-red-400 ml-3 text-xs">
+          <span v-if="states.some(s => s.phase === 'error')" class="text-danger ml-3 text-xs">
             · {{ states.filter(s => s.phase === 'error').length }} failed
           </span>
-          <span v-if="states.some(s => s.phase === 'skipped')" class="text-slate-500 ml-3 text-xs">
+          <span v-if="states.some(s => s.phase === 'skipped')" class="text-muted ml-3 text-xs">
             · {{ states.filter(s => s.phase === 'skipped').length }} skipped
           </span>
         </div>
         <button
-          class="px-6 py-2 text-sm font-semibold bg-green-700 text-white hover:bg-green-600 transition-colors"
+          class="btn btn-primary px-6 py-2 text-sm"
           @click="emit('done')"
         >
           View Team →

@@ -97,20 +97,7 @@ onMounted(fetchBlocks)
 </script>
 
 <template>
-  <div style="min-height:100vh; background:var(--bg);">
-
-    <!-- Header -->
-    <header class="page-header">
-      <div class="header-left">
-        <NuxtLink to="/" class="logo font-display">Clone.dna</NuxtLink>
-        <span class="header-sep">/</span>
-        <span class="header-page">Talent Registry</span>
-      </div>
-      <nav class="header-right">
-        <NuxtLink to="/developer" class="nav-link">Developer Portal</NuxtLink>
-        <NuxtLink to="/" class="nav-link">Workspace</NuxtLink>
-      </nav>
-    </header>
+  <div class="bg-[var(--bg)]">
 
     <!-- Main -->
     <main class="reg-main">
@@ -269,13 +256,6 @@ onMounted(fetchBlocks)
 </template>
 
 <style scoped>
-/* Header */
-.logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
-.header-sep { color: var(--border-mid); margin: 0; }
-.header-page { font-size: 13px; color: var(--text-muted); }
-.header-left { display: flex; align-items: center; gap: 16px; }
-.header-right { display: flex; gap: 12px; align-items: center; }
-
 /* Page layout */
 .reg-main { max-width: 960px; margin: 0 auto; padding: 40px 32px 80px; }
 .reg-top {

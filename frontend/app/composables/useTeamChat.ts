@@ -12,19 +12,26 @@ const JSON_CMD_PATTERN = /```(?:json)?\s*\n?\s*(\{[\s\S]*?\})\s*\n?\s*```|\{[\t 
  * Convert inline JSON command objects in message content to [[TOOL_CALL:...]] markers
  * for consistent rendering in ChatPanel. Normalizes tool calls regardless of whether
  * they came from SSE tool_call events or inline JSON in the response text.
+ *
+ * Splits on existing markers first so already-wrapped tool calls are never double-wrapped.
  */
+const EXISTING_MARKER_RE = /(\[\[(?:TOOL_CALL|TOOL_RESULT|ATTACHMENT):[\s\S]*?\]\])/g
+
 function convertInlineJsonToToolMarkers(content: string): string {
-  return content.replace(JSON_CMD_PATTERN, (fullMatch, fencedBody) => {
-    const raw = fencedBody ?? fullMatch
-    try {
-      const parsed = JSON.parse(raw)
-      if (parsed && typeof parsed.name === 'string' && KNOWN_COMMANDS.has(parsed.name) && parsed.arguments) {
-        console.log('[useTeamChat] Converted inline JSON command →', parsed.name, parsed.arguments)
-        return `\n[[TOOL_CALL:${JSON.stringify(parsed)}]]\n`
-      }
-    } catch { /* not valid JSON */ }
-    return fullMatch
-  })
+  return content.split(EXISTING_MARKER_RE).map((part, i) => {
+    if (i % 2 === 1) return part  // existing marker — leave untouched
+    return part.replace(JSON_CMD_PATTERN, (fullMatch, fencedBody) => {
+      const raw = fencedBody ?? fullMatch
+      try {
+        const parsed = JSON.parse(raw)
+        if (parsed && typeof parsed.name === 'string' && KNOWN_COMMANDS.has(parsed.name) && parsed.arguments) {
+          console.log('[useTeamChat] Converted inline JSON command →', parsed.name, parsed.arguments)
+          return `\n[[TOOL_CALL:${JSON.stringify(parsed)}]]\n`
+        }
+      } catch { /* not valid JSON */ }
+      return fullMatch
+    })
+  }).join('')
 }
 
 /**
