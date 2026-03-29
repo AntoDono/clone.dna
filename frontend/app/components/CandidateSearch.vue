@@ -37,7 +37,7 @@ function select(candidate: CandidateProfile) {
     <div
       v-for="candidate in candidates"
       :key="candidate.github_handle"
-      class="cs-item card"
+      class="cs-item border border-[var(--border)] bg-[var(--bg-card)] rounded shadow-sm transition-all hover:border-[var(--border-mid)] hover:shadow-md"
       :class="{ 'cs-item--open': expandedHandle === candidate.github_handle }"
     >
       <!-- Header row -->
@@ -90,13 +90,6 @@ function select(candidate: CandidateProfile) {
 
 .cs-item {
   overflow: hidden;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  border-color: var(--border-mid) !important;
-  box-shadow: var(--shadow-sm);
-}
-.cs-item:hover {
-  border-color: var(--border-mid) !important;
-  box-shadow: var(--shadow-md);
 }
 .cs-item--open {
   border-color: #60a5fa !important;

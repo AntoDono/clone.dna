@@ -10,6 +10,12 @@ const showModal = ref(false)
 const newTeamName = ref('')
 const creating = ref(false)
 const createError = ref('')
+const username = ref('')
+
+function logout() {
+  api.logout()
+  router.push('/login')
+}
 
 async function fetchTeams() {
   loading.value = true
@@ -27,7 +33,7 @@ async function initTeam() {
     const team = await api.createTeam(name)
     router.push(`/teams/${team.id}?headhunt=true`)
   } catch {
-    createError.value = 'Failed — is the backend running?'
+    createError.value = 'Failed — is the backend running on :8000?'
     creating.value = false
   }
 }
@@ -47,247 +53,172 @@ const ROLE_LABEL: Record<string, string> = { pm: 'PM', swe: 'SWE', designer: 'De
 
 const steps = [
   { num: '01', label: 'Headhunt', desc: 'AI scans GitHub for candidates matching each role.' },
-  { num: '02', label: 'Extract',  desc: 'Grok-4 reads their public code and generates training pairs.' },
-  { num: '03', label: 'Train',    desc: 'QLoRA fine-tunes a LoRA adapter encoding their style.' },
-  { num: '04', label: 'Deploy',   desc: 'Chat with the clone or orchestrate a full AI team.' },
+  { num: '02', label: 'Extract', desc: 'AI reads their public code and generates training pairs.' },
+  { num: '03', label: 'Train', desc: 'QLoRA fine-tunes a LoRA adapter encoding their style.' },
+  { num: '04', label: 'Deploy', desc: 'Chat with the clone or orchestrate a full AI team.' },
 ]
 
 onMounted(() => {
+  username.value = api.getUsername() ?? ''
   fetchTeams()
 })
 </script>
 
 <template>
-  <div class="bg-[var(--bg)]">
+  <div class="page-root">
 
-    <!-- ── Hero ───────────────────────────────────────────────── -->
-    <section class="max-w-5xl mx-auto px-6 pt-16 pb-12 lg:pt-20 lg:pb-16">
-      <div class="flex flex-col lg:flex-row lg:items-center gap-12 lg:gap-16">
+    <!-- Sticky header -->
+    <header class="page-header">
+      <div class="header-left">
+        <span class="logo font-display">Clone.dna</span>
+        <span class="header-sep" aria-hidden="true">/</span>
+        <span class="header-page">Workspace</span>
+      </div>
+      <nav class="header-right">
+        <span v-if="username" class="header-username font-mono">{{ username }}</span>
+        <NuxtLink to="/registry" class="nav-link">Registry</NuxtLink>
+        <NuxtLink to="/developer" class="nav-link">Developer Portal</NuxtLink>
+        <button class="btn btn-ghost btn-sm" @click="logout">Sign out</button>
+      </nav>
+    </header>
 
-        <!-- Left: copy -->
-        <div class="flex-1 min-w-0 animate-in">
-
-          <!-- Badge -->
-          <div class="inline-flex items-center gap-2 mb-6">
-            <span class="w-1.5 h-1.5 rounded-full" style="background-color:#15803D;"></span>
-            <span
-              class="font-mono text-[11px] rounded-[2px] px-2.5 py-0.5 tracking-wide"
-              style="color:#14532D; background:#DCFCE7; border:1px solid #86EFAC;"
-            >
-              Grok-4 · QLoRA · PEFT hot-swap
-            </span>
-          </div>
-
-          <h1 class="font-display text-[52px] lg:text-[60px] leading-[1.06] tracking-tightest text-ink mb-5">
-            Hire the Mind.<br />
-            <em class="text-forest not-italic border-b-[3px] border-forest/40">Not the Body.</em>
-          </h1>
-
-          <p class="text-[16px] leading-relaxed text-stone mb-8 max-w-[480px]">
-            Clone.dna mints a portable <strong class="text-ink font-semibold">.dna block</strong>
-            from a developer's public GitHub — a LoRA adapter encoding their coding style,
-            architecture instincts, and domain vocabulary. Evaluate real thinking before
-            scheduling a single interview.
-          </p>
-
-          <div class="flex flex-wrap items-center gap-3">
-            <button class="btn btn-primary px-5 py-2.5 text-[13px]" @click="openModal">
-              + Build a Team
-            </button>
-            <NuxtLink
-              to="/registry"
-              class="btn btn-secondary px-5 py-2.5 text-[13px]"
-            >
-              Browse Registry →
-            </NuxtLink>
-          </div>
-        </div>
-
-        <!-- Right: visual accent block -->
-        <div class="hidden lg:flex items-center justify-center w-[320px] shrink-0 animate-in" style="animation-delay:100ms">
-          <div class="relative w-full">
-            <!-- Background card -->
-            <div class="rounded bg-card border border-border shadow-card p-6 space-y-3">
-              <div class="flex items-center gap-2 mb-4">
-                <div class="w-2 h-2 rounded-full" style="background-color:#15803D;"></div>
-                <span class="font-mono text-[11px] font-semibold tracking-wide" style="color:#14532D;">LIVE .dna BLOCK</span>
-              </div>
-              <div v-for="(item, i) in [
-                { label: 'Handle',  value: '@danroth27',       mono: true  },
-                { label: 'Role',    value: 'Senior SWE',       mono: false },
-                { label: 'Style',   value: '94%',              mono: true  },
-                { label: 'Domain',  value: '87%',              mono: true  },
-                { label: 'Loss',    value: '0.312',            mono: true  },
-                { label: 'Pairs',   value: '847 training',     mono: false },
-              ]" :key="i" class="flex justify-between items-center py-1.5 border-b border-border last:border-0">
-                <span class="text-[11px] text-muted uppercase tracking-wide">{{ item.label }}</span>
-                <span :class="['text-[13px] font-medium text-ink', item.mono ? 'font-mono' : '']">{{ item.value }}</span>
-              </div>
-              <div class="pt-3">
-                <div class="flex items-center gap-2 mb-1.5">
-                  <span class="text-[10px] text-muted uppercase tracking-wide">Adapter quality</span>
-                </div>
-                <div class="h-1.5 bg-subtle rounded-full overflow-hidden">
-                  <div class="rounded-full" style="height:100%; width:94%; background-color:#15803D; transition: width 1s ease-out;"></div>
-                </div>
-              </div>
-            </div>
-            <!-- Decorative offset border -->
-            <div class="absolute -bottom-2 -right-2 w-full h-full rounded border border-forest/20 -z-10"></div>
-          </div>
+    <!-- Hero -->
+    <section class="hero">
+      <div class="hero-inner">
+        <div class="hero-badge font-mono">LoRA · QLoRA · PEFT hot-swap</div>
+        <h1 class="hero-headline font-display">
+          Hire the Mind.<br /><em>Not the Body.</em>
+        </h1>
+        <p class="hero-body">
+          Clone.dna mints a portable <strong>.dna block</strong> from a developer's public GitHub work —
+          a LoRA adapter encoding their coding style, architecture instincts, and domain vocabulary.
+          Evaluate real thinking before scheduling a single interview.
+        </p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" @click="openModal">+ Build a Team</button>
+          <NuxtLink to="/registry" class="btn btn-secondary">Browse Registry</NuxtLink>
         </div>
       </div>
 
-      <!-- Pipeline strip -->
-      <div class="mt-14 grid grid-cols-2 lg:grid-cols-4 border border-border rounded bg-card shadow-soft overflow-hidden animate-in" style="animation-delay:140ms">
-        <div
-          v-for="(step, i) in steps"
-          :key="step.label"
-          class="relative p-5 border-b lg:border-b-0 border-r border-border last:border-r-0 even:border-b-0 lg:even:border-b-0"
-        >
-          <div class="flex items-center gap-2 mb-2.5">
-            <span class="font-mono text-[10px] font-semibold text-forest-mid">{{ step.num }}</span>
-            <span class="text-[10px] text-border">——</span>
+      <!-- Pipeline strip (Build-style outline: --border on --bg-card) -->
+      <div class="pipeline border border-[var(--border)] bg-[var(--bg-card)] rounded shadow-sm">
+        <div v-for="(step, i) in steps" :key="step.label" class="pipeline-step">
+          <div class="step-num font-mono">{{ step.num }}</div>
+          <div class="step-body">
+            <p class="step-label">{{ step.label }}</p>
+            <p class="step-desc">{{ step.desc }}</p>
           </div>
-          <p class="text-[13px] font-semibold text-ink mb-1">{{ step.label }}</p>
-          <p class="text-[12px] text-stone leading-snug">{{ step.desc }}</p>
-          <!-- Green left accent on first step -->
-          <div v-if="i === 0" class="absolute left-0 top-0 bottom-0 w-[3px] rounded-l" style="background-color:#15803D;"></div>
+          <div v-if="i < steps.length - 1" class="step-arrow" aria-hidden="true">→</div>
         </div>
       </div>
     </section>
 
-    <hr class="border-border max-w-5xl mx-auto" />
+    <hr class="divider" />
 
-    <!-- ── Teams ───────────────────────────────────────────────── -->
-    <main class="max-w-5xl mx-auto px-6 py-10 pb-20">
-
-      <!-- Section header -->
-      <div class="flex items-start justify-between mb-6 gap-4">
+    <!-- Teams section -->
+    <main class="teams-section">
+      <div class="section-header">
         <div>
-          <h2 class="text-[18px] font-semibold text-ink tracking-tight">Your Teams</h2>
-          <p class="text-[13px] text-muted mt-0.5">Each team: 1 PM · 2 SWE · 1 Designer</p>
+          <h2 class="section-title">Your Teams</h2>
+          <p class="section-sub">Each team: 1 PM · 2 SWE · 1 Designer</p>
         </div>
-        <button class="btn btn-primary shrink-0 text-[13px]" @click="openModal">
-          + New Team
-        </button>
+        <button class="btn btn-primary" @click="openModal">+ New Team</button>
       </div>
 
       <!-- Loading -->
-      <div v-if="loading" class="flex items-center gap-3 py-10 text-muted text-[14px]">
+      <div v-if="loading" class="state-loading">
         <span class="streaming-dot"></span>
-        Loading teams…
+        <span>Loading teams…</span>
       </div>
 
-      <!-- Empty state -->
-      <div v-else-if="!teams.length" class="border border-dashed border-border bg-card rounded p-16 text-center animate-in">
-        <div class="w-10 h-10 rounded-full flex items-center justify-center mx-auto mb-4" style="background:#DCFCE7; border:1px solid #86EFAC;">
-          <span class="font-display text-lg" style="color:#15803D;">⬡</span>
-        </div>
-        <p class="text-[15px] font-semibold text-ink mb-2">No teams yet</p>
-        <p class="text-[13px] text-muted mb-6">Build your first AI team to start cloning developer DNA.</p>
-        <button class="btn btn-primary px-5 py-2.5 text-[13px]" @click="openModal">
-          + Build First Team
-        </button>
+      <!-- Empty -->
+      <div v-else-if="!teams.length" class="state-empty animate-in">
+        <div class="empty-icon">⬡</div>
+        <p class="empty-title">No teams yet</p>
+        <p class="empty-desc">Build your first AI team to start cloning developer DNA.</p>
+        <button class="btn btn-primary" @click="openModal">Build First Team</button>
       </div>
 
-      <!-- Teams grid -->
-      <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 stagger">
-        <NuxtLink
-          v-for="team in teams"
-          :key="team.id"
-          :to="`/teams/${team.id}`"
-          class="group block bg-card border border-border rounded shadow-soft hover:border-mid hover:shadow-card hover:-translate-y-px transition-all duration-150 p-5 no-underline animate-in"
-        >
-          <!-- Card header -->
-          <div class="flex items-start justify-between gap-2 mb-3">
-            <div class="min-w-0">
-              <span class="font-mono text-[11px] text-muted block mb-1">#{{ team.id }}</span>
-              <h3 class="text-[15px] font-semibold text-ink leading-snug group-hover:text-forest transition-colors truncate">
-                {{ team.name }}
-              </h3>
+      <!-- Teams grid: subtle tray like Build sidebar -->
+      <div
+        v-else
+        class="teams-board rounded border border-[var(--border)] bg-[var(--bg-subtle)] p-3 shadow-sm"
+      >
+        <div class="teams-grid stagger">
+          <NuxtLink
+            v-for="team in teams"
+            :key="team.id"
+            :to="`/teams/${team.id}`"
+            class="team-card animate-in border border-[var(--border)] bg-[var(--bg-card)] rounded shadow-sm transition-all hover:border-[var(--border-mid)] hover:shadow-md"
+          >
+          <div class="team-card-header">
+            <div>
+              <span class="team-id font-mono">#{{ team.id }}</span>
+              <h2 class="team-name">{{ team.name }}</h2>
             </div>
             <span
-              class="shrink-0 font-mono text-[11px] px-2 py-0.5 rounded-[2px] border"
-              :style="filledCount(team) === 4
-                ? 'background:#DCFCE7; border-color:#86EFAC; color:#14532D;'
-                : filledCount(team) > 0
-                  ? 'background:#FEF3C7; border-color:#FDE68A; color:#92400E;'
-                  : 'background:#F3F0EB; border-color:#E2DDD6; color:#A8A098;'"
+              class="pill"
+              :class="filledCount(team) === 4 ? 'pill-green' : filledCount(team) > 0 ? 'pill-amber' : ''"
             >
-              {{ filledCount(team) }}/4
+              {{ filledCount(team) }}/4 filled
             </span>
           </div>
 
-          <!-- Role pills -->
-          <div class="flex flex-wrap gap-1.5 mb-4">
+          <div class="team-slots">
             <span
               v-for="slot in team.slots"
               :key="slot.id"
-              class="font-mono text-[11px] px-2 py-0.5 rounded-[2px] border"
-              :style="slot.filled
-                ? 'background:#DCFCE7; border-color:#86EFAC; color:#14532D;'
-                : 'background:#F3F0EB; border-color:#E2DDD6; color:#A8A098;'"
+              class="pill"
+              :class="slot.filled ? 'pill-green' : ''"
             >
               {{ ROLE_LABEL[slot.role] }}{{ slot.slot_index > 0 ? ` ${slot.slot_index + 1}` : '' }}
             </span>
           </div>
 
-          <!-- Footer -->
-          <div class="flex items-center justify-between pt-3 border-t border-border">
-            <span class="text-[12px] text-muted">
+          <div class="team-card-footer">
+            <span class="team-date">
               {{ new Date(team.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
             </span>
-            <span class="text-[12px] text-muted group-hover:text-forest transition-colors">Open →</span>
+            <span class="team-open">Open →</span>
           </div>
-        </NuxtLink>
+          </NuxtLink>
+        </div>
       </div>
     </main>
 
-    <!-- ── Create Team Modal ────────────────────────────────────── -->
+    <!-- Create Team Modal -->
     <Teleport to="body">
       <Transition name="modal">
-        <div
-          v-if="showModal"
-          class="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-ink/30 backdrop-blur-sm"
-          @click.self="showModal = false"
-        >
-          <div class="w-full max-w-[400px] bg-card rounded border border-border shadow-card p-7 animate-in">
-            <div class="flex items-center justify-between mb-1">
-              <h2 class="font-display text-[22px] text-ink tracking-tighter">New Team</h2>
-              <button
-                class="text-muted hover:text-ink text-xl leading-none px-2 py-1 rounded hover:bg-subtle transition-colors"
-                @click="showModal = false"
-              >×</button>
+        <div v-if="showModal" class="modal-overlay" @click.self="showModal = false">
+          <div class="modal-box card animate-in">
+            <div class="modal-header">
+              <h2 class="font-display modal-title">New Team</h2>
+              <button class="btn btn-ghost" style="font-size:18px; padding:4px 8px;" @click="showModal = false">×</button>
             </div>
-            <p class="text-[13px] text-muted mb-6">Creates 4 role slots — 1 PM, 2 SWE, 1 Designer.</p>
+            <p class="modal-desc">Creates 4 role slots automatically — 1 PM, 2 SWE, 1 Designer.</p>
 
-            <label class="block text-[11px] font-bold text-stone uppercase tracking-widest mb-1.5">
-              Team Name
-            </label>
-            <input
-              id="new-team-input"
-              v-model="newTeamName"
-              type="text"
-              placeholder="e.g. Alpha Squad"
-              class="w-full bg-card border border-border rounded text-[14px] text-ink placeholder-muted px-3.5 py-2.5 outline-none focus:border-forest focus:ring-2 focus:ring-forest/10 transition"
-              @keydown.enter="initTeam"
-              @keydown.esc="showModal = false"
-            />
-            <p v-if="createError" class="mt-2 text-[13px] text-danger bg-danger-light border border-[#FECACA] rounded px-3 py-2">
-              {{ createError }}
-            </p>
+            <div class="field-group" style="margin-top:20px;">
+              <label class="field-label">Team Name</label>
+              <input
+                id="new-team-input"
+                v-model="newTeamName"
+                type="text"
+                placeholder="e.g. Alpha Squad"
+                class="input"
+                @keydown.enter="initTeam"
+                @keydown.esc="showModal = false"
+              />
+              <p v-if="createError" class="error-callout" style="margin-top:8px;">{{ createError }}</p>
+            </div>
 
-            <div class="flex justify-end gap-2.5 mt-6">
-              <button class="btn btn-secondary text-[13px]" @click="showModal = false">
-                Cancel
-              </button>
+            <div class="modal-actions">
+              <button class="btn btn-secondary" @click="showModal = false">Cancel</button>
               <button
-                class="btn btn-primary text-[13px] px-5"
+                class="btn btn-primary"
                 :disabled="!newTeamName.trim() || creating"
                 @click="initTeam"
               >
-                <span v-if="creating" class="streaming-dot" style="background:white;"></span>
+                <span v-if="creating" class="streaming-dot"></span>
                 {{ creating ? 'Creating…' : 'Create Team' }}
               </button>
             </div>
@@ -299,16 +230,279 @@ onMounted(() => {
 </template>
 
 <style scoped>
-/* Modal transition */
+.page-root { min-height: 100vh; background: var(--bg); }
+
+/* Header */
+.logo {
+  font-size: 18px;
+  font-weight: 400;
+  color: var(--text-primary);
+  letter-spacing: -0.02em;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+}
+.header-sep {
+  color: var(--border-mid);
+  margin: 0;
+  font-size: 16px;
+  padding: 6px 6px;
+}
+.header-page {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 400;
+  padding: 6px 12px;
+}
+.header-left { display: flex; align-items: center; gap: 24px; }
+.header-right { display: flex; align-items: center; gap: 18px; }
+.header-username {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  background: var(--bg-subtle);
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  margin-right: 4px;
+}
+
+/* Hero */
+.hero {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 72px 32px 56px;
+}
+.hero-inner { max-width: 600px; }
+.hero-badge {
+  display: inline-block;
+  font-size: 11px;
+  color: var(--accent-text);
+  background: var(--accent-light);
+  border: 1px solid #86EFAC;
+  border-radius: 2px;
+  padding: 3px 10px;
+  margin-bottom: 24px;
+  letter-spacing: 0.04em;
+}
+.hero-headline {
+  font-size: 52px;
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+  font-weight: 400;
+}
+.hero-headline em { color: var(--accent); font-style: italic; }
+.hero-body {
+  font-size: 16px;
+  line-height: 1.65;
+  color: var(--text-secondary);
+  margin-bottom: 32px;
+  max-width: 520px;
+}
+.hero-body strong { color: var(--text-primary); font-weight: 600; }
+.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* Pipeline (edge tokens match Build: --border) */
+.pipeline {
+  display: flex;
+  align-items: flex-start;
+  gap: 0;
+  margin-top: 56px;
+  overflow: hidden;
+}
+.pipeline-step {
+  flex: 1;
+  padding: 20px 20px 20px 24px;
+  border-right: 1px solid var(--border);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pipeline-step:last-child { border-right: none; }
+.step-num {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+}
+.step-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.step-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.step-arrow {
+  position: absolute;
+  right: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--border-mid);
+  font-size: 16px;
+  z-index: 1;
+}
+
+/* Teams section */
+.teams-section {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 40px 32px 80px;
+}
+.section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  gap: 16px;
+}
+.section-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+.section-sub { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+.state-loading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 32px 0;
+}
+.state-empty {
+  border: 1px dashed var(--border);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 64px 32px;
+  text-align: center;
+}
+.empty-icon { font-size: 32px; margin-bottom: 16px; opacity: 0.3; }
+.empty-title { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.empty-desc { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+
+/* Team grid */
+.teams-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+.team-card {
+  padding: 20px;
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.team-card:hover {
+  transform: translateY(-1px);
+}
+.team-slots .pill:not(.pill-green):not(.pill-amber) {
+  border-color: var(--border);
+  background: var(--bg-card);
+}
+.team-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.team-id {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 3px;
+}
+.team-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+.team-card:hover .team-name { color: var(--accent); }
+.team-slots { display: flex; flex-wrap: wrap; gap: 6px; }
+.team-card-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.team-date { font-size: 12px; color: var(--text-muted); }
+.team-open {
+  font-size: 12px;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.team-card:hover .team-open { color: var(--accent); }
+
+/* Fields */
+.field-group { display: flex; flex-direction: column; gap: 6px; }
+.field-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+.btn-sm { font-size: 13px; padding: 6px 12px; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(28,24,17,0.35);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.modal-box {
+  width: 100%;
+  max-width: 420px;
+  padding: 28px;
+}
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.modal-title { font-size: 22px; font-weight: 400; letter-spacing: -0.02em; }
+.modal-desc { font-size: 13px; color: var(--text-muted); }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+}
+.error-callout {
+  font-size: 13px;
+  color: var(--red);
+  background: var(--red-light);
+  border: 1px solid #FECACA;
+  border-radius: var(--radius);
+  padding: 8px 12px;
+}
+
+/* Transitions */
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
-.modal-enter-active > div { animation: fadeUp 0.2s ease both; }
+.modal-enter-active .modal-box { animation: fadeUp 0.2s ease both; }
 
-/* Pipeline grid — 2 cols on mobile, 4 on lg */
-@media (max-width: 1024px) {
-  /* on 2×2 grid: remove right border on col 2, remove bottom border on row 2 */
-  .pipeline-step:nth-child(2) { border-right: none; }
-  .pipeline-step:nth-child(3),
-  .pipeline-step:nth-child(4) { border-bottom: none; }
+@media (max-width: 640px) {
+  .hero-headline { font-size: 36px; }
+  .pipeline { flex-direction: column; }
+  .pipeline-step { border-right: none; border-bottom: 1px solid var(--border); }
+  .pipeline-step:last-child { border-bottom: none; }
+  .step-arrow { display: none; }
 }
 </style>

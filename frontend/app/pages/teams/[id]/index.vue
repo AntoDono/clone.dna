@@ -181,21 +181,23 @@ onMounted(fetchTeam)
         </div>
       </div>
 
-      <!-- Role slots grid -->
-      <div class="slots-grid stagger">
-        <RoleSlot
-          v-for="slot in team.slots"
-          :key="slot.id"
-          :slot="slot"
-          :meta="(ROLE_META[slot.role] as RoleMeta)"
-          :is-active="activeSlotId === slot.id"
-          :is-scanning="activeSlotId === slot.id && isSearching"
-          :team-id="teamId"
-          @scan="scanSlot(slot.id)"
-          @remove="onRemoveCandidate(slot.id)"
-          @extracted="onExtracted"
-          @error="onExtractionError"
-        />
+      <!-- Role slots: same chrome as Build (subtle tray + bordered cards) -->
+      <div class="slots-board rounded p-3 shadow-sm">
+        <div class="slots-grid stagger">
+          <RoleSlot
+            v-for="slot in team.slots"
+            :key="slot.id"
+            :slot="slot"
+            :meta="(ROLE_META[slot.role] as RoleMeta)"
+            :is-active="activeSlotId === slot.id"
+            :is-scanning="activeSlotId === slot.id && isSearching"
+            :team-id="teamId"
+            @scan="scanSlot(slot.id)"
+            @remove="onRemoveCandidate(slot.id)"
+            @extracted="onExtracted"
+            @error="onExtractionError"
+          />
+        </div>
       </div>
 
       <!-- Extraction error -->
@@ -208,7 +210,7 @@ onMounted(fetchTeam)
       <div v-if="isSearching || searchResults || searchError" class="search-panel animate-in">
 
         <!-- Searching -->
-        <div v-if="isSearching" class="card search-loading">
+        <div v-if="isSearching" class="search-loading border border-[var(--border)] bg-[var(--bg-card)] rounded shadow-sm">
           <span class="streaming-dot"></span>
           <div>
             <p style="font-weight:600; color:var(--text-primary); font-size:14px;">Scanning GitHub…</p>
@@ -269,10 +271,10 @@ onMounted(fetchTeam)
 
 <style scoped>
 .logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
-.header-sep { color: var(--border-mid); margin: 0 10px; }
+.header-sep { color: var(--border-mid); margin: 0; }
 .header-page { font-size: 13px; color: var(--text-muted); }
-.t-header-left { display: flex; align-items: center; }
-.t-header-right { display: flex; align-items: center; gap: 10px; }
+.t-header-left { display: flex; align-items: center; gap: 16px; min-width: 0; }
+.t-header-right { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .slots-badge {
   font-size: 11px;
   color: var(--text-muted);

@@ -2,7 +2,15 @@
 
 **Hire the Mind. Not the Body.**
 
-Clone.dna turns a developer's public GitHub work into a portable, executable LoRA adapter — a `.dna` block — that encodes their coding style, architectural patterns, and domain vocabulary. Hiring teams load the block and interact with it before scheduling a single interview. Developers become testable artifacts, not keyword-matched resumes.
+You are now an intelligence company. Not a company that uses AI tools — an intelligence company that headhunts, hires, onboards, and deploys a full engineering team without a single human employee involved.
+
+Clone.dna turns any developer's public GitHub work into a `.dna` block: a LoRA adapter trained on their real committed code, encoding their exact coding style, architectural instincts, and domain vocabulary. You load the block and their patterns live in the weights. You talk to them before scheduling a single interview. You decide if you want to hire them at all.
+
+Then you build.
+
+From a Discord DM you can spin up the entire team. Describe what you want to ship. Your PM — trained on a real product manager's public work — picks it up, breaks it into sub-tasks, and delegates each one to the right specialist. Your SWE writes and runs the code. Your designer ships the interface. No standups. No Slack threads. No timezones. No salaries. The team is available 24/7, at infinite parallelism, and every member was trained on the real output of a real human — not a prompt that pretends to be one.
+
+**From hiring to production. Zero humans involved.**
 
 > Built at the [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com) · Providence, RI · March 28–29, 2026
 >
@@ -144,34 +152,47 @@ Most LoRA projects treat vLLM compatibility as an afterthought. We check it at b
 
 ## Architecture
 
+### Minting Pipeline
+
+```mermaid
+flowchart TD
+    A["GitHub / Website / Resume"] --> B["Extractor Layer\nextractor/github.py · website.py · resume.py"]
+    B -->|"candidate profile\nskills · repos · bio"| C["AI Pair Generation\ntrainer/grok.py\n70B teacher reads real code\ngenerates instruction–response pairs"]
+    C -->|"18–60 training pairs\nper candidate"| D["LoRA Training\ntrainer/training.py\nPEFT + HuggingFace Trainer\nmixed: candidate + alpaca + tool-use"]
+    D --> E[".dna Block\ndnas/team_id/handle/\nmanifest · eval · sources\nconsent · profile.md · adapter weights"]
+    E --> F["Talent Registry\nGET /registry\nbrowse · search · download"]
+    E --> G["Chat / Build\nPOST /teams/id/build/chat\nhot-swap LoRA adapters per candidate"]
+    G --> H["Tool-Use Agent Loop\nread · write · run in sandbox"]
+    G --> I["PM Orchestration\nPM plans → assigns → specialists respond"]
 ```
-GitHub / Website / Resume
-         │
-         ▼
-  [ Extractor Layer ]          backend/extractor/
-    github.py · website.py · resume.py
-         │  candidate profile (skills, repos, bio)
-         ▼
-  [ Grok-4 Pair Generation ]   trainer/grok.py
-    70B teacher reads code → generates (instruction, response) pairs
-         │  ~18–60 training pairs per candidate
-         ▼
-  [ LoRA Training ]            trainer/training.py
-    PEFT + HuggingFace Trainer on BASE_MODEL
-    mixed with alpaca-cleaned + tool-use examples
-         │
-         ▼
-  [ .dna Block ]               dnas/{team_id}/{handle}/
-    manifest.json · eval.json · sources.json
-    consent.json  · profile.md · adapter weights
-         │
-         ├──▶ [ Talent Registry ]    GET /registry
-         │      browse · search · download .dna zips
-         │
-         └──▶ [ Chat / Build ]       POST /teams/{id}/build/chat
-                hot-swap LoRA adapters per candidate
-                tool-use agent loop (read/write files, run commands)
-                PM orchestration: PM plans → Grok assigns → specialists respond
+
+### Team Orchestration Flow
+
+```mermaid
+flowchart LR
+    User["Discord DM / Build UI"] --> PM["PM Clone\nplans · decomposes · delegates"]
+    PM --> SWE1["SWE Clone #1\nwrites · debugs · ships code"]
+    PM --> SWE2["SWE Clone #2\nparallel implementation track"]
+    PM --> Design["Designer Clone\nUI · systems · UX"]
+    SWE1 --> Tools["Sandboxed Workspace\nread_file · write_file · run_command"]
+    SWE2 --> Tools
+    PM -.->|"weight-space blend\nprimary 0.7 + PM 0.3"| SWE1
+    PM -.->|"weight-space blend"| SWE2
+```
+
+### Hot-Swap Inference Engine
+
+```mermaid
+flowchart TD
+    Req["Incoming Chat Request"] --> Cache{{"Adapter cached?\n_adapters_loaded set"}}
+    Cache -->|"yes — zero cost"| Gen["Generate Response\nPEFT LoRA active"]
+    Cache -->|"no"| Evict["Evict current adapter\ndelete_adapter + CUDA flush"]
+    Evict --> Load["Load new adapter\nload_adapter from dnas/"]
+    Load --> Gen
+    Gen --> Stream["SSE Token Stream\nto frontend"]
+
+    Train["Training Job\nborrow_model_for_training()"] -->|"_training_count++\ndetach LoRA · train() mode"| Base["Base Model\n14B GPTQ in VRAM"]
+    Base -->|"_training_count--\neval() mode restored"| Cache
 ```
 
 ---
