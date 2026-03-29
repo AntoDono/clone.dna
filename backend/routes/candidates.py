@@ -30,8 +30,9 @@ from routes.teams import get_slot, save_candidate
 
 router = APIRouter()
 
-# ── In-memory headhunt cache (keyed by team_id) ───────────────────────────────
+# ── In-memory caches ─────────────────────────────────────────────────────────
 _headhunt_cache: dict[int, list[dict]] = {}
+_search_cache: dict[tuple[int, int], dict] = {}  # (team_id, slot_id) -> response
 
 
 class SelectCandidateRequest(PydanticModel):
@@ -105,11 +106,16 @@ def clear_headhunt_cache(team_id: int):
 # ── Role search ───────────────────────────────────────────────────────────────
 
 @router.get("/teams/{team_id}/roles/{slot_id}/search")
-def search_role(team_id: int, slot_id: int):
-    """Return cached or freshly fetched candidates for a specific role slot."""
+def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
+  """Return cached or freshly fetched candidates for a specific role slot."""
     slot = get_slot(team_id, slot_id)
+    key = (team_id, slot_id)
+    if not force and key in _search_cache:
+        return _search_cache[key]
     candidates = search_candidates(slot.role, limit=5)
-    return {"role": slot.role, "slot_id": slot_id, "candidates": candidates}
+    result = {"role": slot.role, "slot_id": slot_id, "candidates": candidates}
+    _search_cache[key] = result
+    return result
 
 
 # ── Website / resume extraction ───────────────────────────────────────────────
@@ -149,6 +155,7 @@ def select_candidate(team_id: int, slot_id: int, body: SelectCandidateRequest):
     profile = build_github_profile(body.github_handle, role=slot.role)
     if not profile:
         raise HTTPException(404, f"GitHub user '{body.github_handle}' not found")
+    _search_cache.pop((team_id, slot_id), None)
     return save_candidate(slot, profile)
 
 
@@ -160,3 +167,4 @@ def remove_candidate(team_id: int, slot_id: int):
         Candidate.delete().where(Candidate.role_slot == slot).execute()
         slot.filled = False
         slot.save()
+    _search_cache.pop((team_id, slot_id), None)

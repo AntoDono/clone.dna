@@ -373,7 +373,12 @@ def grok_chat(
         sys_prompt += (
             "\n\nYou have access to tools. To call a tool, emit a <tool_call> block: "
             "<tool_call>{\"name\": \"tool_name\", \"arguments\": {...}}</tool_call>\n"
-            f"Available tools: {', '.join(tool_names)}"
+            f"Available tools: {', '.join(tool_names)}\n\n"
+            "IMPORTANT: When asked to build, create, write, edit, or modify anything, "
+            "you MUST use write_file, edit_file, create_folder, and run_command to actually "
+            "do the work in the workspace. Do NOT just output code in your response — "
+            "the user expects files to be created and commands to be run. "
+            "Always act, never just describe what you would do."
         )
 
     messages = [{"role": "system", "content": sys_prompt}]

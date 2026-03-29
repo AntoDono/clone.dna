@@ -60,13 +60,13 @@ async function fetchTeam() {
   finally { loading.value = false }
 }
 
-async function scanSlot(slotId: number) {
+async function scanSlot(slotId: number, force = false) {
   activeSlotId.value = slotId
   isSearching.value = true
   searchResults.value = null
   searchError.value = ''
   try {
-    searchResults.value = await api.searchCandidates(teamId, slotId)
+    searchResults.value = await api.searchCandidates(teamId, slotId, force)
   } catch {
     searchError.value = 'GitHub scan failed. Check GITHUB_TOKEN and backend.'
   } finally {
@@ -112,6 +112,14 @@ const allFilled = computed(() => {
   if (!team.value) return false
   return team.value.slots.length > 0 && team.value.slots.every(s => s.filled)
 })
+
+const codeCopied = ref(false)
+async function copyPairCode() {
+  if (!team.value?.discord_pair_code) return
+  await navigator.clipboard.writeText(team.value.discord_pair_code)
+  codeCopied.value = true
+  setTimeout(() => { codeCopied.value = false }, 2000)
+}
 
 onMounted(fetchTeam)
 </script>
@@ -161,6 +169,17 @@ onMounted(fetchTeam)
       <div class="mb-8">
         <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">Team #{{ team.id }}</p>
         <h1 class="text-2xl font-semibold text-white">{{ team.name }}</h1>
+        <div v-if="team.discord_pair_code" class="mt-2 flex items-center gap-2">
+          <span class="text-xs text-slate-500">Discord pair code:</span>
+          <code class="text-sm font-mono text-indigo-400 bg-slate-800 px-2 py-0.5 rounded select-all">{{ team.discord_pair_code }}</code>
+          <button
+            class="text-xs px-2 py-0.5 rounded transition-colors"
+            :class="codeCopied ? 'text-green-400 bg-green-950' : 'text-slate-500 hover:text-slate-300 bg-slate-800 hover:bg-slate-700'"
+            @click="copyPairCode"
+          >
+            {{ codeCopied ? 'Copied' : 'Copy' }}
+          </button>
+        </div>
       </div>
 
       <!-- Role slots grid -->
@@ -215,12 +234,20 @@ onMounted(fetchTeam)
                 for {{ ROLE_META[searchResults.role]?.label }}
               </span>
             </h2>
-            <button
-              class="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 px-3 py-1 transition-colors"
-              @click="searchResults = null; activeSlotId = null"
-            >
-              Close
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                class="text-sm text-blue-500 hover:text-blue-300 border border-blue-800 px-3 py-1 transition-colors"
+                @click="scanSlot(activeSlotId!, true)"
+              >
+                Rescan
+              </button>
+              <button
+                class="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 px-3 py-1 transition-colors"
+                @click="searchResults = null; activeSlotId = null"
+              >
+                Close
+              </button>
+            </div>
           </div>
           <CandidateSearch
             :candidates="searchResults.candidates"
