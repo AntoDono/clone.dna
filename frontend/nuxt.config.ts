@@ -6,7 +6,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     public: {
-      apiBase: 'https://ycon-shit.antodono.com',
+      apiBase: 'https://ycon-backend.antodono.com',
     },
   },
 
