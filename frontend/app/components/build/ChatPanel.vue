@@ -168,10 +168,6 @@ const inputModel = computed({
         <p class="text-sm text-slate-500">Select a team member to start chatting</p>
       </template>
       <div class="ml-auto flex items-center gap-2">
-        <span
-          v-if="useGrok"
-          class="px-2 py-0.5 text-xs font-bold border border-orange-600 text-orange-400 bg-orange-950/40 tracking-wide animate-pulse"
-        >GROK</span>
         <span v-else class="px-2 py-0.5 text-xs border border-slate-700 text-slate-600">LOCAL</span>
       </div>
     </div>
