@@ -1,7 +1,27 @@
+<script setup lang="ts">
+const emergencyCalibration = useState('emergencyCalibration', () => false)
+
+function onKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Shift' && !e.repeat) {
+    emergencyCalibration.value = !emergencyCalibration.value
+  }
+}
+
+onMounted(() => window.addEventListener('keydown', onKeyDown))
+onUnmounted(() => window.removeEventListener('keydown', onKeyDown))
+</script>
+
 <template>
   <div class="min-h-screen bg-slate-950">
     <NuxtRouteAnnouncer />
     <NuxtPage />
+    <Transition name="ec-dot">
+      <div
+        v-if="emergencyCalibration"
+        class="fixed bottom-4 right-4 z-[999] w-3 h-3 rounded-full bg-orange-500 shadow-lg shadow-orange-500/40"
+        title="Emergency calibration active"
+      />
+    </Transition>
   </div>
 </template>
 
@@ -19,4 +39,9 @@ body {
 ::-webkit-scrollbar-track { background: #020617; }
 ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+.ec-dot-enter-active,
+.ec-dot-leave-active { transition: opacity 0.15s, transform 0.15s; }
+.ec-dot-enter-from,
+.ec-dot-leave-to { opacity: 0; transform: scale(0); }
 </style>

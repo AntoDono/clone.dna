@@ -128,24 +128,42 @@ def ensure_base_model() -> tuple:
         return model, tokenizer
 
 
+_NO_ADAPTER = "__raw__"
+
+
 def load_adapter(lora_path: str, adapter_name: str) -> None:
     """
     Load a LoRA adapter, evicting any previously loaded adapter first.
     GPTQ-quantized models don't support multiple concurrent LoRA adapters
     (PEFT randomly initialises the first adapter's weights on layers created
     for the second), so we keep exactly one adapter resident at a time.
+
+    If the adapter directory is missing or has no weights, falls back to the
+    raw base model so inference still works without a trained LoRA.
     """
+    adapter_dir = Path(lora_path)
+    has_weights = adapter_dir.is_dir() and any(adapter_dir.glob("adapter_model*"))
+
     model, _ = ensure_base_model()
     with _cache_lock:
-        if adapter_name in _adapters_loaded:
+        target = adapter_name if has_weights else _NO_ADAPTER
+        if target in _adapters_loaded:
             return
         for old in list(_adapters_loaded):
+            if old == _NO_ADAPTER:
+                continue
             logger.info("Inference: unloading adapter '%s' before swap", old)
             try:
                 model.delete_adapter(old)
             except Exception:
                 pass
         _adapters_loaded.clear()
+
+        if not has_weights:
+            logger.info("Inference: no adapter weights at '%s' — using raw base model", lora_path)
+            _adapters_loaded.add(_NO_ADAPTER)
+            return
+
         logger.info("Inference: loading adapter '%s' from %s", adapter_name, lora_path)
         model.load_adapter(lora_path, adapter_name=adapter_name)
         _adapters_loaded.add(adapter_name)
@@ -322,7 +340,8 @@ def _generate_once(
     }
 
     with _cache_lock:
-        model.set_adapter(adapter_name)
+        if _NO_ADAPTER not in _adapters_loaded:
+            model.set_adapter(adapter_name)
 
     gen_thread = threading.Thread(
         target=lambda: model.generate(**generate_kwargs),

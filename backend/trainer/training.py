@@ -333,13 +333,30 @@ def train_lora(
             "message": f"LoRA ready — {trainable:,} trainable / {total:,} total params",
         })
 
+        _TOOL_SYSTEM = (
+            "You have access to tools. To call a tool, emit a <tool_call> block with JSON inside. "
+            "Do NOT output tool calls as markdown code blocks — ONLY the <tool_call> format will be executed:\n\n"
+            "<tool_call>\n"
+            '{"name": "tool_name", "arguments": {"key": "value"}}\n'
+            "</tool_call>\n\n"
+            "When asked to create, write, read, edit, or delete files, list directories, "
+            "or run commands, you MUST use <tool_call>. NEVER just show code in a text response."
+        )
+
         def _format(pair: dict) -> str:
             """
             Render an instruction-response pair as a single training string using the
             tokenizer's chat template.  Falls back to a plain markdown format if the
             tokenizer doesn't expose apply_chat_template (e.g. older checkpoints).
+
+            Tool-use examples get a system message so the model learns to associate
+            the tool-use system prompt with <tool_call> output.
             """
-            messages = [
+            has_tool_call = "<tool_call>" in pair.get("response", "")
+            messages = []
+            if has_tool_call:
+                messages.append({"role": "system", "content": _TOOL_SYSTEM})
+            messages += [
                 {"role": "user", "content": pair["instruction"]},
                 {"role": "assistant", "content": pair["response"]},
             ]

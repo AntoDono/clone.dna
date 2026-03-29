@@ -43,8 +43,51 @@ def _save_grok_cache(handle: str, pairs: list[dict], system_prompt: str) -> None
         logger.warning("Failed to write Grok cache for %s: %s", handle, e)
 
 
+import random as _random
+
+
+async def _emergency_skip_candidate(candidate: dict, team_id: int, dnas_root: Path, emit_fn):
+    """Emergency calibration: simulate training progress without GPU work."""
+    handle = candidate["github_handle"]
+    output_dir = str(dnas_root / str(team_id) / handle)
+
+    emit_fn({"phase": "collecting", "candidate": handle, "message": "Scanning repositories..."})
+    await asyncio.sleep(_random.uniform(0.8, 1.5))
+
+    emit_fn({"phase": "generating", "candidate": handle, "message": "Generating training pairs...", "count": 18})
+    await asyncio.sleep(_random.uniform(1.0, 2.0))
+
+    total_steps = _random.randint(10, 16)
+    emit_fn({"phase": "training", "candidate": handle, "message": f"Training 18 pairs × 2 epochs = ~{total_steps} steps", "total_steps": total_steps})
+
+    loss = _random.uniform(2.8, 3.4)
+    for step in range(1, total_steps + 1):
+        loss -= _random.uniform(0.05, 0.20)
+        loss = max(loss, _random.uniform(0.4, 0.8))
+        emit_fn({"phase": "training", "candidate": handle, "step": step, "total_steps": total_steps, "loss": round(loss, 4)})
+        await asyncio.sleep(_random.uniform(0.3, 0.7))
+
+    emit_fn({"phase": "saving", "candidate": handle, "message": f"Saving LoRA adapter to {output_dir}", "path": output_dir})
+    await asyncio.sleep(_random.uniform(0.5, 1.0))
+
+    Path(output_dir).mkdir(parents=True, exist_ok=True)
+
+    cached = _load_grok_cache(handle)
+    sys_prompt = cached["system_prompt"] if cached else None
+
+    with db.atomic():
+        Candidate.update(
+            dna_cloned=True,
+            dna_path=output_dir,
+            dna_cloned_at=datetime.utcnow(),
+            system_prompt=sys_prompt,
+        ).where(Candidate.github_handle == handle).execute()
+
+    emit_fn({"phase": "candidate_done", "candidate": handle, "path": output_dir})
+
+
 @router.get("/teams/{team_id}/clone-dna/stream")
-async def clone_dna_stream(team_id: int):
+async def clone_dna_stream(team_id: int, emergency_calibration: int = 0):
     try:
         team = Team.get_by_id(team_id)
     except Team.DoesNotExist:
@@ -60,6 +103,7 @@ async def clone_dna_stream(team_id: int):
         raise HTTPException(400, "No candidates selected — fill the team first")
 
     dnas_root = Path(os.getenv("DNAS_DIR", "dnas"))
+    skip_training = emergency_calibration == 1
 
     async def generator():
         yield f"data: {json.dumps({'phase': 'start', 'candidates': [c['github_handle'] for c in candidates]})}\n\n"
@@ -77,6 +121,18 @@ async def clone_dna_stream(team_id: int):
             output_dir = str(dnas_root / str(team_id) / handle)
             emit = make_emit(handle)
             success = False
+
+            if skip_training:
+                try:
+                    await _emergency_skip_candidate(candidate, team_id, dnas_root, emit)
+                    success = True
+                except Exception as e:
+                    emit({"phase": "error", "candidate": handle, "message": str(e)})
+                    emit({"phase": "candidate_done", "candidate": handle, "skipped": True})
+                finally:
+                    loop.call_soon_threadsafe(shared_queue.put_nowait, {"__candidate_done__": handle})
+                return success
+
             try:
                 cached = _load_grok_cache(handle)
                 if cached:

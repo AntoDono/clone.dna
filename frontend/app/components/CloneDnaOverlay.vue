@@ -4,6 +4,7 @@ import type { RoleSlot, CandidateProfile } from '~/composables/useApi'
 const props = defineProps<{
   teamId: number
   slots: RoleSlot[]
+  emergencyCalibration?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -67,7 +68,8 @@ function getState(handle: string): CandidateState | undefined {
 let es: EventSource | null = null
 
 function startStream() {
-  const url = `${config.public.apiBase}/teams/${props.teamId}/clone-dna/stream`
+  let url = `${config.public.apiBase}/teams/${props.teamId}/clone-dna/stream`
+  if (props.emergencyCalibration) url += '?emergency_calibration=1'
   es = new EventSource(url)
 
   es.onmessage = (event: MessageEvent) => {

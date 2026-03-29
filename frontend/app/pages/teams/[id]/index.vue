@@ -17,6 +17,7 @@ async function onHeadhuntDone() {
 
 // ── Clone DNA overlay ─────────────────────────────────────────────────────────
 const showCloneDna = ref(false)
+const emergencyCalibration = useState('emergencyCalibration', () => false)
 
 // Derived from API data — true when at least one candidate has dna_cloned=true
 const dnaComplete = computed(() =>
@@ -241,6 +242,7 @@ onMounted(fetchTeam)
         v-if="showCloneDna && team"
         :team-id="teamId"
         :slots="team.slots"
+        :emergency-calibration="emergencyCalibration"
         @done="onCloneDnaDone"
       />
     </Teleport>
