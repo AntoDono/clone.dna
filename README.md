@@ -5,6 +5,8 @@
 Clone.dna turns a developer's public GitHub work into a portable, executable LoRA adapter — a `.dna` block — that encodes their coding style, architectural patterns, and domain vocabulary. Hiring teams load the block and interact with it before scheduling a single interview. Developers become testable artifacts, not keyword-matched resumes.
 
 > Built at the [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com) · Providence, RI · March 28–29, 2026
+>
+> **Live demo:** [yconai.anto.com](https://yconai.anto.com)
 
 ---
 
@@ -105,7 +107,7 @@ The server pre-warms the base model in a background thread on startup.
 |---|---|---|
 | `XAI_API_KEY` | — | **Required.** Grok API key for training pair generation |
 | `GITHUB_TOKEN` | — | Optional. Raises GitHub API rate limit to 5000 req/hr |
-| `BASE_MODEL` | `Qwen/Qwen2.5-0.5B-Instruct` | HuggingFace model ID or local path. Supports GPTQ quantized models |
+| `BASE_MODEL` | `Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4` | HuggingFace model ID or local path. Supports GPTQ quantized models |
 | `DB_PATH` | `clone_dna.db` | SQLite database path |
 | `DNAS_DIR` | `dnas` | Root directory for saved .dna blocks |
 | `GROK_CACHE_DIR` | `grok_cache` | Cache directory for Grok-generated training pairs (skips API on reruns) |
@@ -189,7 +191,7 @@ Each `.dna` block is a directory at `dnas/{team_id}/{github_handle}/` containing
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", device_map="auto")
+model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4", device_map="auto")
 model = PeftModel.from_pretrained(model, "dnas/1/torvalds")
 tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
 ```
@@ -207,14 +209,17 @@ Adapter weights are standard PEFT safetensors, compatible with vLLM's `--enable-
     "expertise_domains": ["backend", "distributed-systems", "API-design"],
     "consent_verified": true
   },
-  "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "base_model": "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4",
   "rank": 64,
   "alpha": 128,
   "vllm_compatible": true,
   "eval_summary": {
+    "final_loss": 1.42,
+    "best_loss": 1.31,
     "style_consistency": 0.87,
-    "domain_accuracy": 0.93,
-    "latency_overhead_ms": 12
+    "domain_accuracy": 0.83,
+    "latency_overhead_ms": 12.8,
+    "teacher_model": "grok-4"
   }
 }
 ```
@@ -268,8 +273,10 @@ A `.dna` block is an executable benchmark of a developer's coding patterns, not 
 
 **Frontend:** Nuxt 3 · Vue 3 · Tailwind CSS · Bun
 
-**Models:** configurable via `BASE_MODEL` (default: `Qwen/Qwen2.5-0.5B-Instruct`; supports GPTQ quantized variants up to 27B+)
+**Models:** configurable via `BASE_MODEL` (default: `Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4`; supports any HuggingFace-compatible model including GPTQ quantized variants)
 
 ---
+
+**Deployment:** [yconai.anto.com](https://yconai.anto.com)
 
 *CLONE.dna · [yconic New England Inter-Collegiate AI Hackathon 2026](https://yconic.com)*

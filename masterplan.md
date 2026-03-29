@@ -134,7 +134,7 @@ from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 base = AutoModelForCausalLM.from_pretrained(
-    "Qwen/Qwen2.5-0.5B-Instruct", device_map="auto"
+    "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4", device_map="auto"
 )
 model = PeftModel.from_pretrained(base, "dnas/1/torvalds")
 tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
@@ -180,7 +180,7 @@ tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
         "total_contributions_analyzed": 47823,
         "consent_verified": false
     },
-    "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "base_model": "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4",
     "rank": 32,
     "alpha": 128,
     "quantization": "FP16",
@@ -362,7 +362,7 @@ For production deployment: multiple vLLM instances (using the exported PEFT-comp
 
 ### Interoperability
 
-- **Base model agnostic** — .dna works across any HuggingFace-compatible model family: Llama, Mistral, Qwen, Phi, Gemma, and others. Default: Qwen/Qwen2.5-0.5B-Instruct, configurable via `BASE_MODEL` environment variable
+- **Base model agnostic** — .dna works across any HuggingFace-compatible model family: Llama, Mistral, Qwen, Phi, Gemma, and others. Default: Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4, configurable via `BASE_MODEL` environment variable
 - **Framework agnostic** — .dna is an open spec. The reference runtime uses PEFT + HuggingFace Transformers; adapter weights are also compatible with vLLM's `--enable-lora` for production serving
 - **Standard adapter format** — adapter weights are standard PEFT safetensors. Any tool that loads PEFT adapters can use a .dna block directly
 

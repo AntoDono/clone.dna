@@ -30,7 +30,7 @@ On startup the server pre-warms the base model (loaded once into VRAM, reused ac
 |---|---|---|
 | `XAI_API_KEY` | — | **Required.** Grok API key for training pair generation |
 | `GITHUB_TOKEN` | — | Optional. Raises GitHub API rate limit to 5000 req/hr |
-| `BASE_MODEL` | `Qwen/Qwen2.5-0.5B-Instruct` | HuggingFace model ID or local path |
+| `BASE_MODEL` | `Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4` | HuggingFace model ID or local path |
 | `DB_PATH` | `clone_dna.db` | SQLite database path |
 | `DNAS_DIR` | `dnas` | Root directory where `.dna` blocks are stored |
 | `GROK_CACHE_DIR` | `grok_cache` | Cache for Grok-generated training pairs (avoids re-calling the API on reruns) |
@@ -166,7 +166,7 @@ Any `.dna` block can be loaded outside the backend with PEFT:
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-base = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", device_map="auto")
+base = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4", device_map="auto")
 model = PeftModel.from_pretrained(base, "dnas/1/torvalds")
 tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
 ```

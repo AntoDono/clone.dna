@@ -34,7 +34,7 @@ cd frontend && bun install && bun run dev
 
 ## Environment Variables
 
-`XAI_API_KEY` (required), `BASE_MODEL` (default: Qwen/Qwen2.5-0.5B-Instruct), `GITHUB_TOKEN` (optional).
+`XAI_API_KEY` (required), `BASE_MODEL` (default: Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4), `GITHUB_TOKEN` (optional).
 
 ## PM Orchestration
 

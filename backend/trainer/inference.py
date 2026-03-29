@@ -35,48 +35,48 @@ _training_count: int = 0  # number of training jobs currently holding the evicti
 
 
 @contextmanager
-def model_evicted():
-    """Temporarily remove the inference model from VRAM for a training job.
+def borrow_model_for_training():
+    """Borrow the cached base model for training — no eviction, no reload.
 
-    Reference-counted: the first job in evicts the model; intermediate jobs
-    find it already gone and proceed directly; the last job out reloads it.
-    This allows N concurrent training runs (one per GPU) without the second
-    job's exit prematurely reloading the inference model while the first is
-    still training.
+    1. Ensures the base model is loaded.
+    2. Detaches any inference LoRA adapter.
+    3. Puts the model into training-ready state (train mode, use_cache=False).
+    4. Yields (model, tokenizer) to the caller.
+    5. On exit, restores inference state (eval mode, use_cache=True).
     """
     global _training_count
 
-    model = tokenizer = None
-    is_first = False
+    model, tokenizer = ensure_base_model()
+
     with _cache_lock:
         _training_count += 1
-        if _training_count == 1:
-            is_first = True
-            model = _base.pop("model", None)
-            tokenizer = _base.pop("tokenizer", None)
-            _adapters_loaded.clear()
+        for old in list(_adapters_loaded):
+            try:
+                model.delete_adapter(old)
+            except Exception:
+                pass
+        _adapters_loaded.clear()
 
-    if is_first:
-        if model is not None:
-            del model
-        if tokenizer is not None:
-            del tokenizer
+    model.config.use_cache = False
+    model.train()
+
+    try:
+        yield model, tokenizer
+    finally:
+        model.config.use_cache = True
+        model.eval()
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-    try:
-        yield
-    finally:
         with _cache_lock:
             _training_count -= 1
-            is_last = _training_count == 0
-        if is_last:
-            ensure_base_model()
 
 
 def _base_model_name() -> str:
-    return os.getenv("BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+    return os.getenv("BASE_MODEL", "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4")
+
+
+_load_lock = threading.Lock()
 
 
 def ensure_base_model() -> tuple:
@@ -85,6 +85,9 @@ def ensure_base_model() -> tuple:
     If a training job is currently active (_training_count > 0) the reload is
     skipped — the last training job to exit will call ensure_base_model() itself
     once _training_count drops to 0, so inference will still be restored.
+
+    Uses a separate _load_lock so the heavy from_pretrained() call doesn't
+    block callers that just need to read the already-loaded cache via _cache_lock.
     """
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -95,25 +98,34 @@ def ensure_base_model() -> tuple:
                 _training_count,
             )
             return _base.get("model"), _base.get("tokenizer")
-        if "model" not in _base:
-            name = _base_model_name()
-            from .model_utils import resolve_model_path
-            model_path = resolve_model_path(name, log=lambda msg: logger.info("Inference: %s", msg))
-            logger.info("Inference: loading base model '%s'...", model_path)
-            tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-            if tokenizer.pad_token is None:
-                tokenizer.pad_token = tokenizer.eos_token
-            model = AutoModelForCausalLM.from_pretrained(
-                model_path,
-                torch_dtype="auto",
-                device_map="auto",
-                trust_remote_code=True,
-            )
-            model.eval()
+        if "model" in _base:
+            return _base["model"], _base["tokenizer"]
+
+    with _load_lock:
+        with _cache_lock:
+            if "model" in _base:
+                return _base["model"], _base["tokenizer"]
+
+        name = _base_model_name()
+        from .model_utils import resolve_model_path
+        model_path = resolve_model_path(name, log=lambda msg: logger.info("Inference: %s", msg))
+        logger.info("Inference: loading base model '%s'...", model_path)
+        tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
+        model = AutoModelForCausalLM.from_pretrained(
+            model_path,
+            torch_dtype="auto",
+            device_map="auto",
+            trust_remote_code=True,
+        )
+        model.eval()
+
+        with _cache_lock:
             _base["model"] = model
             _base["tokenizer"] = tokenizer
-            logger.info("Inference: base model ready.")
-        return _base["model"], _base["tokenizer"]
+        logger.info("Inference: base model ready.")
+        return model, tokenizer
 
 
 def load_adapter(lora_path: str, adapter_name: str) -> None:
@@ -141,7 +153,7 @@ def load_adapter(lora_path: str, adapter_name: str) -> None:
 
 def warmup_model() -> None:
     """Pre-load the base model into the inference cache at server startup."""
-    base_model = os.getenv("BASE_MODEL", "Qwen/Qwen2.5-0.5B-Instruct")
+    base_model = os.getenv("BASE_MODEL", "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4")
     logger.info("Warmup: loading model '%s' into inference cache...", base_model)
     try:
         from .model_utils import resolve_model_path
@@ -151,6 +163,7 @@ def warmup_model() -> None:
         logger.info("Warmup: model ready.")
     except Exception as e:
         logger.warning("Warmup: failed to load model '%s': %s", base_model, e)
+    print("Warmup: model loaded CAN CONTINUE.")
 
 
 # ── System prompt fallback ────────────────────────────────────────────────────
@@ -191,10 +204,17 @@ def _build_system_prompt(
         "use their coding style, domain expertise, and communication patterns. "
         "Be concise, technical, and in character.",
         "",
-        "You have access to tools. When the user asks you to create, write, read, edit, or delete files, "
-        "list directories, or run commands, you MUST use the appropriate tool by emitting a <tool_call> block. "
-        "NEVER just show code in a text response when the user asks you to create or modify a file — "
-        "always call the write_file or edit_file tool to actually make the change.",
+        "You have access to tools. To call a tool, emit a <tool_call> block with the JSON inside. "
+        "Do NOT output tool calls as markdown code blocks or numbered steps — they will not execute. "
+        "ONLY the <tool_call> format below will be executed:",
+        "",
+        '<tool_call>',
+        '{"name": "write_file", "arguments": {"path": "example.py", "content": "print(\'hello\')"}}',
+        '</tool_call>',
+        "",
+        "When the user asks you to create, write, read, edit, or delete files, "
+        "list directories, or run commands, you MUST use the <tool_call> format above. "
+        "NEVER just show code in a text response when the user asks you to create or modify a file.",
     ]
 
     ws_listing = _list_workspace(workspace_dir)

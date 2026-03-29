@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from contextlib import asynccontextmanager
 
@@ -14,17 +15,15 @@ from routes import teams_router, candidates_router, clone_dna_router, build_rout
 
 logger = logging.getLogger(__name__)
 
+init_db()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_db()
-    # Download the HF base model in the background so it's cached before the
-    # first clone-dna request arrives — server starts immediately regardless.
+    """Startup/shutdown hook — runs only in the worker process, not the reloader."""
     threading.Thread(target=warmup_model, daemon=True, name="hf-warmup").start()
     logger.info("HF model warmup started in background thread.")
     yield
-    if not db.is_closed():
-        db.close()
 
 
 app = FastAPI(title="Clone.dna API", version="1.0.0", lifespan=lifespan)
@@ -45,4 +44,9 @@ app.include_router(registry_router)
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=8000,
+        reload=os.getenv("UVICORN_RELOAD", "").lower() in ("1", "true"),
+    )
