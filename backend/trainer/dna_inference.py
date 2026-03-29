@@ -160,10 +160,56 @@ def stream_chat(
     gen_thread.start()
 
     full_response = ""
+    in_think = False
+    buf = ""
+    THINK_OPEN = "<think>"
+    THINK_CLOSE = "</think>"
+
     for token_text in streamer:
-        if token_text:
-            full_response += token_text
-            emit({"token": token_text})
+        if not token_text:
+            continue
+        buf += token_text
+
+        # Process the buffer, detecting <think>…</think> blocks.
+        # We keep a small tail unprocessed in case a tag straddles two tokens.
+        while True:
+            if in_think:
+                idx = buf.find(THINK_CLOSE)
+                if idx >= 0:
+                    buf = buf[idx + len(THINK_CLOSE):]
+                    in_think = False
+                    emit({"thinking": False})
+                else:
+                    # Keep only the last (len-1) chars — partial tag might be there
+                    if len(buf) > len(THINK_CLOSE):
+                        buf = buf[-(len(THINK_CLOSE) - 1):]
+                    break
+            else:
+                idx = buf.find(THINK_OPEN)
+                if idx == -1:
+                    # Emit everything except a possible partial tag at the end
+                    safe = len(buf) - (len(THINK_OPEN) - 1)
+                    if safe > 0:
+                        to_emit = buf[:safe]
+                        buf = buf[safe:]
+                        full_response += to_emit
+                        emit({"token": to_emit})
+                    break
+                elif idx > 0:
+                    to_emit = buf[:idx]
+                    buf = buf[idx:]
+                    full_response += to_emit
+                    emit({"token": to_emit})
+                else:
+                    # buf starts with <think>
+                    buf = buf[len(THINK_OPEN):]
+                    in_think = True
+                    emit({"thinking": True})
+
+    # Flush remaining buffer
+    if buf and not in_think:
+        full_response += buf
+        emit({"token": buf})
 
     gen_thread.join()
     return full_response

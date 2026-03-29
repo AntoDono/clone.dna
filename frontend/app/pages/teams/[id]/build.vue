@@ -85,6 +85,7 @@ onMounted(async () => {
         :messages="chat.activeMessages()"
         :streaming="chat.streaming.value"
         :streaming-handle="chat.streamingHandle.value"
+        :is-thinking="chat.isThinking.value"
         :input-text="chat.inputText.value"
         :chat-end-ref="chat.chatEndRef.value"
         :candidate-of="candidateOf"

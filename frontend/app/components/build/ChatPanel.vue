@@ -7,6 +7,7 @@ const props = defineProps<{
   messages: ChatMessage[]
   streaming: boolean
   streamingHandle: string | null
+  isThinking: boolean
   inputText: string
   chatEndRef: HTMLElement | null
   candidateOf: (handle: string) => CandidateProfile | undefined
@@ -134,7 +135,7 @@ const inputModel = computed({
             >
               {{ msg.content }}
               <span
-                v-if="streaming && streamingHandle && !isUserMsg(msg) && msg === messages[messages.length - 1] && msg.content === ''"
+                v-if="streaming && streamingHandle && !isUserMsg(msg) && msg === messages[messages.length - 1]"
                 class="inline-block w-1.5 h-3.5 bg-blue-400 animate-pulse ml-0.5 align-text-bottom"
               ></span>
             </div>
@@ -146,18 +147,19 @@ const inputModel = computed({
         </div>
       </TransitionGroup>
 
-      <!-- Streaming dots while waiting for first token -->
+      <!-- Thinking / waiting indicator (shown until the first real token arrives) -->
       <div
-        v-if="streaming && activeThread && streamingHandle === threadKey(activeThread) && messages.every(m => m.content !== '' || m.sender === 'user')"
-        class="flex gap-3"
+        v-if="streaming && activeThread && streamingHandle === threadKey(activeThread) && (messages.length === 0 || messages.at(-1)?.sender === 'user')"
+        class="flex gap-3 items-center"
       >
-        <div class="w-7 h-7 bg-slate-800 border border-slate-700 flex items-center justify-center">
+        <div class="w-7 h-7 bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
           <span class="flex gap-0.5">
             <span class="w-1 h-1 bg-slate-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
             <span class="w-1 h-1 bg-slate-500 rounded-full animate-bounce" style="animation-delay: 100ms"></span>
             <span class="w-1 h-1 bg-slate-500 rounded-full animate-bounce" style="animation-delay: 200ms"></span>
           </span>
         </div>
+        <span v-if="isThinking" class="text-xs text-slate-500 animate-pulse tracking-wide">Thinking…</span>
       </div>
 
       <div :ref="(el) => $emit('update:chatEndRef', el)"></div>

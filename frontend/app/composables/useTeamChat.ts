@@ -58,6 +58,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
   const inputText = ref('')
   const streaming = ref(false)
   const streamingHandle = ref<string | null>(null)
+  const isThinking = ref(false)
 
   async function sendMessage() {
     if (!inputText.value.trim() || streaming.value || !activeThread.value) return
@@ -77,18 +78,12 @@ export function useTeamChat(teamId: number, apiBase: string) {
     const key = candidate.github_handle
     streaming.value = true
     streamingHandle.value = key
+    isThinking.value = false
 
-    const userMsg: ChatMessage = {
+    pushMessage(key, {
       id: Date.now(), thread: key, sender: 'user',
       content: message, created_at: new Date().toISOString(),
-    }
-    pushMessage(key, userMsg)
-
-    const assistantMsg: ChatMessage = {
-      id: Date.now() + 1, thread: key, sender: key,
-      content: '', created_at: new Date().toISOString(),
-    }
-    pushMessage(key, assistantMsg)
+    })
 
     const response = await fetch(`${apiBase}/teams/${teamId}/build/chat`, {
       method: 'POST',
@@ -97,14 +92,21 @@ export function useTeamChat(teamId: number, apiBase: string) {
     })
 
     if (!response.ok) {
-      assistantMsg.content = '[Error sending message]'
+      pushMessage(key, {
+        id: Date.now() + 1, thread: key, sender: key,
+        content: '[Error sending message]', created_at: new Date().toISOString(),
+      })
       streaming.value = false
       streamingHandle.value = null
+      isThinking.value = false
       return
     }
 
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
+    // Index of the assistant bubble in threads.value[key]; -1 = not yet created.
+    // We always update via threads.value[key][idx] to keep Vue's reactivity working.
+    let assistantIdx = -1
 
     while (true) {
       const { done, value } = await reader.read()
@@ -114,18 +116,40 @@ export function useTeamChat(teamId: number, apiBase: string) {
         if (!line.startsWith('data: ')) continue
         try {
           const data = JSON.parse(line.slice(6))
-          if (data.token) {
-            assistantMsg.content += data.token
+          if (data.thinking === true) {
+            isThinking.value = true
+          } else if (data.thinking === false) {
+            isThinking.value = false
+          } else if (data.token) {
+            isThinking.value = false
+            if (assistantIdx === -1) {
+              if (!threads.value[key]) threads.value[key] = []
+              threads.value[key].push({
+                id: Date.now() + 1, thread: key, sender: key,
+                content: '', created_at: new Date().toISOString(),
+              })
+              assistantIdx = threads.value[key].length - 1
+            }
+            threads.value[key]![assistantIdx]!.content += data.token
             scrollToBottom()
           } else if (data.done && data.message_id) {
-            assistantMsg.id = data.message_id
+            if (assistantIdx !== -1) threads.value[key]![assistantIdx]!.id = data.message_id
           } else if (data.error) {
-            assistantMsg.content = `[Error: ${data.error}]`
+            if (assistantIdx === -1) {
+              if (!threads.value[key]) threads.value[key] = []
+              threads.value[key].push({
+                id: Date.now() + 1, thread: key, sender: key,
+                content: '', created_at: new Date().toISOString(),
+              })
+              assistantIdx = threads.value[key].length - 1
+            }
+            threads.value[key]![assistantIdx]!.content = `[Error: ${data.error}]`
           }
         } catch { /* skip malformed */ }
       }
     }
 
+    isThinking.value = false
     streaming.value = false
     streamingHandle.value = null
   }
@@ -136,12 +160,12 @@ export function useTeamChat(teamId: number, apiBase: string) {
     const key = 'orchestrate'
     streaming.value = true
     streamingHandle.value = key
+    isThinking.value = false
 
-    const userMsg: ChatMessage = {
+    pushMessage(key, {
       id: Date.now(), thread: key, sender: 'user',
       content: prompt, created_at: new Date().toISOString(),
-    }
-    pushMessage(key, userMsg)
+    })
 
     const response = await fetch(`${apiBase}/teams/${teamId}/build/orchestrate`, {
       method: 'POST',
@@ -152,24 +176,27 @@ export function useTeamChat(teamId: number, apiBase: string) {
     if (!response.ok) {
       streaming.value = false
       streamingHandle.value = null
+      isThinking.value = false
       return
     }
 
     const reader = response.body!.getReader()
     const decoder = new TextDecoder()
     let currentSpeaker: string | null = null
-    let currentMsg: ChatMessage | null = null
+    let currentMsgIdx = -1
 
-    function getOrCreateBubble(speaker: string): ChatMessage {
+    function getOrCreateBubbleIdx(speaker: string): number {
       if (currentSpeaker !== speaker) {
         currentSpeaker = speaker
-        currentMsg = {
+        if (!threads.value[key]) threads.value[key] = []
+        threads.value[key].push({
           id: Date.now() + Math.random(), thread: key,
           sender: speaker, content: '', created_at: new Date().toISOString(),
-        }
-        pushMessage(key, currentMsg)
+        })
+        currentMsgIdx = threads.value[key].length - 1
+        scrollToBottom()
       }
-      return currentMsg!
+      return currentMsgIdx
     }
 
     while (true) {
@@ -186,14 +213,15 @@ export function useTeamChat(teamId: number, apiBase: string) {
             continue
           }
           if (data.speaker && data.token) {
-            const bubble = getOrCreateBubble(data.speaker)
-            bubble.content += data.token
+            const idx = getOrCreateBubbleIdx(data.speaker)
+            threads.value[key]![idx]!.content += data.token
             scrollToBottom()
           }
         } catch { /* skip malformed */ }
       }
     }
 
+    isThinking.value = false
     streaming.value = false
     streamingHandle.value = null
   }
@@ -217,6 +245,7 @@ export function useTeamChat(teamId: number, apiBase: string) {
     inputText,
     streaming,
     streamingHandle,
+    isThinking,
     sendMessage,
     handleKeydown,
   }
