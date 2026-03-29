@@ -140,14 +140,44 @@ The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in seq
 `trainer/inference.py` manages the loaded model:
 
 - **Adapter hot-swap** — the base model is loaded once at startup; adapters are applied with PEFT's `set_adapter` / `load_adapter` on every chat request, enabling multiple role slots to share one GPU copy of the base weights.
-- **Tool-use agent loop** — the model can emit structured tool calls (`read_file`, `write_file`, `run_command`) that the backend executes inside `AGENT_WORKSPACE_DIR` and feeds back as tool results, enabling the clone to actually write and run code.
+- **Tool-use agent loop** — the model can emit structured tool calls (`read_file`, `write_file`, `run_command`, `list_files`, `search_registry`) that the backend executes inside `AGENT_WORKSPACE_DIR` and feeds back as tool results, enabling the clone to actually write and run code.
+- **Reference-counted eviction** — when training jobs need VRAM, `borrow_model_for_training()` evicts the inference model. The first training job evicts; intermediate jobs proceed directly; the last job out reloads the model automatically.
 
-`trainer/orchestrator.py` drives the PM orchestration flow:
+## PM Orchestration Flow
 
-1. A lightweight PM persona (base model, no adapter) decomposes the user's prompt into a task plan.
-2. Grok reads the plan and assigns each sub-task to the most appropriate role slot.
-3. Each specialist (with its own adapter loaded) generates a response to its assigned task.
-4. Responses are streamed back to the frontend in sequence.
+The orchestration endpoint (`POST /teams/{id}/build/orchestrate`) coordinates a multi-expert build session across all cloned candidates on a team. The flow runs in three stages, all streamed over SSE:
+
+### Stage 1 — PM Plans
+
+The **lead candidate** (the PM role slot, or the first cloned candidate if no PM exists) receives the user's prompt and produces a task plan. The lead's LoRA adapter is hot-swapped in, and the response is generated through the full agent loop (including tool calls). The PM's plan is streamed token-by-token to the frontend and saved to the `orchestrate` message thread.
+
+### Stage 2 — Grok Assigns Tasks
+
+The PM's plan is sent to **Grok-4** (`trainer/orchestrator.assign_tasks()`) along with the list of specialist candidates and their roles. Grok reads the plan and returns a JSON array of `{"handle", "task"}` assignments — one short task sentence per specialist. If the Grok call fails, every specialist receives the original user prompt as a fallback.
+
+The assignment prompt includes a workspace listing (files already created by prior turns) so Grok can direct specialists to build on existing work rather than starting from scratch.
+
+### Stage 3 — Specialists Respond
+
+Each specialist runs **sequentially** — one at a time, in assignment order. For each specialist:
+
+1. Their LoRA adapter is hot-swapped onto the base model
+2. They receive their assigned task as a single-message history
+3. They generate a response through the agent loop (with tool access to the shared workspace)
+4. Their response is streamed to the frontend and saved to the `orchestrate` thread
+
+Because specialists share a workspace directory (`agent-workspace/{team_id}/`), each specialist can read and build on files created by prior specialists in the same orchestration turn.
+
+### SSE Event Sequence
+
+```
+{"phase": "start", "prompt": "..."}              ← orchestration begins
+{"speaker": "lead-handle", "token": "..."}        ← PM tokens stream
+{"phase": "specialist", "speaker": "...", "task": "..."}  ← specialist assigned
+{"speaker": "spec-handle", "token": "..."}        ← specialist tokens stream
+  ... (repeats for each specialist) ...
+{"done": true}                                    ← orchestration complete
+```
 
 ## Data Model (SQLite)
 
