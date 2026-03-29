@@ -100,8 +100,8 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Pipeline strip -->
-      <div class="pipeline">
+      <!-- Pipeline strip (Build-style outline: --border on --bg-card) -->
+      <div class="pipeline border border-[var(--border)] bg-[var(--bg-card)] rounded shadow-sm">
         <div v-for="(step, i) in steps" :key="step.label" class="pipeline-step">
           <div class="step-num font-mono">{{ step.num }}</div>
           <div class="step-body">
@@ -139,14 +139,18 @@ onMounted(() => {
         <button class="btn btn-primary" @click="openModal">Build First Team</button>
       </div>
 
-      <!-- Teams grid -->
-      <div v-else class="teams-grid stagger">
-        <NuxtLink
-          v-for="team in teams"
-          :key="team.id"
-          :to="`/teams/${team.id}`"
-          class="team-card card animate-in"
-        >
+      <!-- Teams grid: subtle tray like Build sidebar -->
+      <div
+        v-else
+        class="teams-board rounded border border-[var(--border)] bg-[var(--bg-subtle)] p-3 shadow-sm"
+      >
+        <div class="teams-grid stagger">
+          <NuxtLink
+            v-for="team in teams"
+            :key="team.id"
+            :to="`/teams/${team.id}`"
+            class="team-card animate-in border border-[var(--border)] bg-[var(--bg-card)] rounded shadow-sm transition-all hover:border-[var(--border-mid)] hover:shadow-md"
+          >
           <div class="team-card-header">
             <div>
               <span class="team-id font-mono">#{{ team.id }}</span>
@@ -177,7 +181,8 @@ onMounted(() => {
             </span>
             <span class="team-open">Open →</span>
           </div>
-        </NuxtLink>
+          </NuxtLink>
+        </div>
       </div>
     </main>
 
@@ -233,19 +238,31 @@ onMounted(() => {
   font-weight: 400;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+  padding: 6px 12px;
+  border-radius: var(--radius);
 }
-.header-sep { color: var(--border-mid); margin: 0 10px; font-size: 16px; }
-.header-page { font-size: 13px; color: var(--text-muted); font-weight: 400; }
-.header-left { display: flex; align-items: center; }
-.header-right { display: flex; align-items: center; gap: 4px; }
+.header-sep {
+  color: var(--border-mid);
+  margin: 0;
+  font-size: 16px;
+  padding: 6px 6px;
+}
+.header-page {
+  font-size: 13px;
+  color: var(--text-muted);
+  font-weight: 400;
+  padding: 6px 12px;
+}
+.header-left { display: flex; align-items: center; gap: 24px; }
+.header-right { display: flex; align-items: center; gap: 18px; }
 .header-username {
   font-size: 11px;
   color: var(--text-muted);
-  padding: 4px 10px;
+  padding: 6px 12px;
   background: var(--bg-subtle);
   border-radius: 20px;
   border: 1px solid var(--border);
-  margin-right: 8px;
+  margin-right: 4px;
 }
 
 /* Hero */
@@ -285,22 +302,18 @@ onMounted(() => {
 .hero-body strong { color: var(--text-primary); font-weight: 600; }
 .hero-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 
-/* Pipeline */
+/* Pipeline (edge tokens match Build: --border) */
 .pipeline {
   display: flex;
   align-items: flex-start;
   gap: 0;
   margin-top: 56px;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius);
   overflow: hidden;
-  background: var(--bg-card);
-  box-shadow: var(--shadow-sm);
 }
 .pipeline-step {
   flex: 1;
   padding: 20px 20px 20px 24px;
-  border-right: 1px solid var(--border-mid);
+  border-right: 1px solid var(--border);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -385,17 +398,12 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
-  border-color: var(--border-mid) !important;
-  box-shadow: var(--shadow-sm);
 }
 .team-card:hover {
   transform: translateY(-1px);
-  border-color: var(--border-mid) !important;
-  box-shadow: var(--shadow-md);
 }
 .team-slots .pill:not(.pill-green):not(.pill-amber) {
-  border-color: var(--border-mid);
+  border-color: var(--border);
   background: var(--bg-card);
 }
 .team-card-header {

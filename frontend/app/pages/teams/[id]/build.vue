@@ -72,8 +72,8 @@ onUnmounted(() => {
   <div class="h-screen bg-[var(--bg)] flex flex-col">
 
     <!-- Header -->
-    <header class="flex-shrink-0 bg-[rgba(250,248,244,0.92)] border-b border-[var(--border)] px-6 py-4 flex items-center justify-between backdrop-blur-md">
-      <div class="flex items-center gap-4">
+    <header class="flex-shrink-0 bg-[rgba(250,248,244,0.92)] border-b border-[var(--border)] px-8 py-4 flex items-center justify-between gap-6 backdrop-blur-md">
+      <div class="flex items-center gap-5 min-w-0">
         <NuxtLink :to="`/teams/${teamId}`" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-sm">
           ← {{ team?.name ?? 'Team' }}
         </NuxtLink>

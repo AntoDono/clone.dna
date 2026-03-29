@@ -271,10 +271,10 @@ onMounted(fetchBlocks)
 <style scoped>
 /* Header */
 .logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
-.header-sep { color: var(--border-mid); margin: 0 10px; }
+.header-sep { color: var(--border-mid); margin: 0; }
 .header-page { font-size: 13px; color: var(--text-muted); }
-.header-left { display: flex; align-items: center; }
-.header-right { display: flex; gap: 4px; align-items: center; }
+.header-left { display: flex; align-items: center; gap: 16px; }
+.header-right { display: flex; gap: 12px; align-items: center; }
 
 /* Page layout */
 .reg-main { max-width: 960px; margin: 0 auto; padding: 40px 32px 80px; }

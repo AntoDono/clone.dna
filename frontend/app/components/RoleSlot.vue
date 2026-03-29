@@ -67,11 +67,7 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
 
 <template>
   <div
-    class="slot-card card"
-    :class="{
-      'slot-card--filled': slot.filled,
-      'slot-card--active': isActive && !slot.filled,
-    }"
+    class="slot-card rounded border border-black bg-[var(--bg-subtle)] shadow-sm transition-all hover:shadow-md"
   >
     <!-- Badge + status row -->
     <div class="slot-top">
@@ -98,7 +94,10 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
     </div>
 
     <!-- ── FILLED ── -->
-    <div v-if="slot.filled && slot.candidate" class="slot-candidate">
+    <div
+      v-if="slot.filled && slot.candidate"
+      class="slot-candidate rounded"
+    >
       <div class="candidate-header">
         <img
           v-if="slot.candidate.avatar_url"
@@ -129,14 +128,13 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
           v-if="slot.candidate.dna_cloned"
           :href="`${useRuntimeConfig().public.apiBase}/registry/${teamId}/${slot.candidate.github_handle}/download`"
           download
-          class="btn btn-secondary"
-          style="font-size:12px; flex:1; justify-content:center;"
+          class="btn candidate-action-btn"
         >
           ↓ .dna
         </a>
         <button
-          class="btn btn-ghost"
-          style="font-size:12px; flex:1; color:#991B1B;"
+          type="button"
+          class="btn candidate-action-btn candidate-action-btn--remove"
           @click="emit('remove')"
         >
           Remove
@@ -224,13 +222,7 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
   display: flex;
   flex-direction: column;
   gap: 12px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  border-color: var(--border-mid) !important;
-  box-shadow: var(--shadow-sm);
 }
-.slot-card--filled { border-color: #86EFAC !important; }
-.slot-card--active { border-color: #93C5FD !important; }
-
 .slot-top {
   display: flex;
   justify-content: space-between;
@@ -255,30 +247,26 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
 .slot-label { font-size: 14px; font-weight: 600; color: #1C1811; }
 .slot-desc { font-size: 12px; color: #A8A098; }
 
-/* ── Filled state ── */
+/* ── Filled state (outline matches Build / TeamSidebar) ── */
 .slot-candidate {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-top: 2px;
   padding: 12px;
-  border: 1px solid var(--border-mid);
-  border-radius: var(--radius);
-  background: var(--bg-card);
-  box-shadow: var(--shadow-sm);
 }
 .candidate-header { display: flex; gap: 10px; align-items: flex-start; }
 .candidate-avatar {
   width: 32px;
   height: 32px;
-  border: 1px solid var(--border-mid);
+  border: 1px solid var(--border);
   object-fit: cover;
   flex-shrink: 0;
   border-radius: 2px;
 }
 .candidate-avatar--fallback {
   background: var(--bg-subtle);
-  border: 1px solid var(--border-mid);
+  border: 1px solid var(--border);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -293,6 +281,30 @@ const ROLE_BADGE: Record<string, { bg: string; text: string; border: string }> =
 .candidate-desc { font-size: 12px; color: #6B6050; line-height: 1.5; }
 .candidate-skills { display: flex; flex-wrap: wrap; gap: 4px; }
 .candidate-actions { display: flex; gap: 8px; }
+
+/* Match slot card: black outline on both actions */
+.candidate-action-btn {
+  flex: 1;
+  justify-content: center;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid #000 !important;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+.candidate-action-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: #000 !important;
+  color: var(--text-primary);
+}
+.candidate-action-btn--remove {
+  color: var(--red) !important;
+}
+.candidate-action-btn--remove:hover:not(:disabled) {
+  background: var(--red-light);
+  color: var(--red) !important;
+}
 
 /* ── Empty state ── */
 .slot-empty { display: flex; flex-direction: column; gap: 8px; }
