@@ -64,11 +64,30 @@ Each pair captures a real task that would naturally produce the developer's actu
 - Technical strengths and domain vocabulary
 - How they approach architectural decisions
 
-Fallback: if the Grok call fails, a minimal template prompt is constructed from the candidate's profile fields.
+The system prompt is enriched by the personality profile (see below) when available. Fallback: if the Grok call fails, a minimal template prompt is constructed from the candidate's profile fields.
+
+### Personality profile generation
+
+`generate_personality_profile(candidate, code_blobs, emit)` makes an additional Grok call to build a structured multi-dimensional personality model from the candidate's profile data and actual source code:
+
+| Field | Description |
+|---|---|
+| `coding_style` | Patterns, naming conventions, comment density, preferred paradigm (OOP/functional/etc.) |
+| `architecture_preferences` | Preferred design patterns and system design approach |
+| `work_style` | Approach to work (iterative, test-first, etc.) |
+| `communication_style` | Tone, verbosity, formality observed in code comments and docs |
+| `hard_skills` | List of `{skill, depth}` objects rating technical proficiency |
+| `soft_skills` | List of `{trait, evidence}` objects inferred from code |
+| `personality_traits` | Summary of developer personality |
+| `domain_expertise` | List of `{domain, depth}` objects (depth 1–5 scale) |
+
+The personality profile is stored as JSON in the `Candidate.personality_profile` database field and is persisted to `grok_cache/{handle}.json` alongside training pairs. It directly informs the system prompt used for inference — giving chat responses the developer's specific communication style and architectural vocabulary.
+
+Fallback: if the Grok call fails, sensible defaults are derived from the candidate's skills/soft_skills profile fields.
 
 ### Model
 
-Pair generation uses `grok-4.20-0309-reasoning`. Profile extraction (in `extractor/schema.py`) uses `grok-4.20-0309-non-reasoning`.
+Pair generation and personality profiling use `grok-4.20-0309-reasoning`. Profile extraction (in `extractor/schema.py`) uses `grok-4.20-0309-non-reasoning`.
 
 ---
 
@@ -122,7 +141,17 @@ Keyword matching between the candidate's skills/languages/repo topics and the tr
 `score = 0.6 × coverage + 0.4 × density`
 
 **HumanEval Proxy** (`compute_humaneval_proxy`):
-Heuristic code quality score based on 5 indicators: function definitions, error handling, type hints, docstrings, import organization.
+Heuristic code quality score (0–1) from training pair responses. Checks 5 presence indicators: function definitions, error handling, type annotations, documentation (docstrings/comments), and import statements. Returns the average indicator hit rate across all response samples. This is a directional signal from training data, not a substitute for actual HumanEval benchmark evaluation.
+
+**Perplexity Reduction** (`compute_perplexity_reduction`):
+The most rigorous eval metric — measures how much the trained adapter improves prediction of the candidate's own code vs the base model.
+
+- Holds out the last 20% of training pairs (up to 8 samples) as a validation set — never seen during training
+- Computes token-level cross-entropy NLL for (a) base model and (b) trained adapter on the held-out set
+- `perplexity_reduction_ratio = exp(H_base) / exp(H_adapter)` — ratio > 1.0 means improvement
+- `nll_delta_bits = H_base - H_adapter` — positive means adapter is better
+
+Unlike the heuristic proxies, perplexity reduction directly measures the adapter's learned weights on real data.
 
 **Latency Overhead** (`estimate_latency_overhead_ms`):
 Estimated inference latency overhead from adapter size in MB.
