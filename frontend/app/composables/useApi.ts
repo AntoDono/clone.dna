@@ -91,6 +91,22 @@ export interface FitScoreResponse {
   ranked: CandidateFitScore[]
 }
 
+/** A minted .dna block record as returned by the developer self-service endpoint */
+export interface DnaBlock {
+  team_id: string
+  handle: string
+  version: string
+  base_model: string | null
+  created: string | null
+  consent_status: string
+  consent_verified: boolean
+  revocable: boolean
+  revoked: boolean
+  revoked_at: string | null
+  source_urls: string[]
+  revocation_endpoint: string
+}
+
 /** Read the stored JWT — returns null if not available (SSR or not logged in). */
 function getAuthHeaders(): Record<string, string> {
   if (!import.meta.client) return {}
@@ -170,12 +186,17 @@ export const useApi = () => {
     revokeBlock: (teamId: string, handle: string): Promise<{ status: string }> =>
       $fetch(`${base}/registry/${teamId}/${handle}`, { method: 'DELETE', headers: h() }),
 
+<<<<<<< HEAD
     importBlock: (file: File, teamId: string): Promise<{ status: string; team_id: string; handle: string; files: number; manifest: Record<string, unknown> }> => {
       const form = new FormData()
       form.append('file', file)
       form.append('team_id', teamId)
       return $fetch(`${base}/registry/import`, { method: 'POST', body: form, headers: h() })
     },
+=======
+    developerLookup: (handle: string): Promise<{ handle: string; total: number; blocks: DnaBlock[]; message: string }> =>
+      $fetch(`${base}/registry/developer/${encodeURIComponent(handle)}`),
+>>>>>>> 4788a49342654690811f41b215af595f2112cf85
 
     getBuildMessages: (teamId: number, thread: string): Promise<ChatMessage[]> =>
       $fetch(`${base}/teams/${teamId}/build/messages?thread=${encodeURIComponent(thread)}`, { headers: h() }),
