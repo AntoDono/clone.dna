@@ -56,6 +56,13 @@ function filledCount(team: Team) {
 
 const ROLE_LABEL: Record<string, string> = { pm: 'PM', swe: 'SWE', designer: 'Design' }
 
+const steps = [
+  { num: '01', label: 'Headhunt', desc: 'AI scans GitHub to find candidates matching each role.' },
+  { num: '02', label: 'Extract', desc: 'Grok-4 reads their public code and generates training pairs.' },
+  { num: '03', label: 'Train', desc: 'QLoRA fine-tunes a LoRA adapter encoding their style.' },
+  { num: '04', label: 'Deploy', desc: 'Chat with the clone or orchestrate the full team.' },
+]
+
 onMounted(() => {
   username.value = api.getUsername() ?? ''
   fetchTeams()
@@ -94,24 +101,84 @@ onMounted(() => {
       </div>
     </header>
 
+    <!-- Hero -->
+    <section class="border-b border-slate-800/60 bg-gradient-to-b from-slate-900/60 to-transparent">
+      <div class="max-w-4xl mx-auto px-6 py-14">
+        <div class="max-w-2xl">
+          <div class="flex items-center gap-2 mb-5">
+            <span class="text-xs font-mono text-blue-400 border border-blue-800 bg-blue-950/40 px-2 py-0.5 tracking-wider">LoRA · PEFT · Grok-4</span>
+            <span class="text-xs font-mono text-slate-500 border border-slate-800 px-2 py-0.5">v2.0 adapter format</span>
+          </div>
+          <h1 class="text-4xl font-bold text-white leading-tight mb-4">
+            Hire the Mind.<br /><span class="text-blue-400">Not the Body.</span>
+          </h1>
+          <p class="text-slate-400 text-base leading-relaxed mb-8 max-w-xl">
+            Clone.dna mints a portable <span class="text-white font-medium">.dna block</span> from a developer's public GitHub work —
+            a LoRA adapter encoding their coding style, architecture patterns, and domain vocabulary.
+            Evaluate a developer's actual thinking before scheduling a single interview.
+          </p>
+          <div class="flex items-center gap-3 flex-wrap">
+            <button
+              class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-2.5 text-sm transition-colors"
+              @click="openModal"
+            >
+              + Build a Team
+            </button>
+            <NuxtLink
+              to="/registry"
+              class="border border-slate-600 text-slate-300 font-medium px-6 py-2.5 text-sm hover:border-slate-400 hover:text-white transition-colors"
+            >
+              Browse Registry
+            </NuxtLink>
+            <NuxtLink
+              to="/developer"
+              class="text-slate-500 text-sm hover:text-slate-300 transition-colors px-2 py-2.5"
+            >
+              Developer Portal →
+            </NuxtLink>
+          </div>
+        </div>
+
+        <!-- How it works strip -->
+        <div class="mt-12 grid grid-cols-4 gap-px bg-slate-800/60">
+          <div v-for="step in steps" :key="step.label" class="bg-slate-950 px-5 py-5">
+            <p class="text-xs text-slate-600 font-mono mb-1">{{ step.num }}</p>
+            <p class="text-sm font-semibold text-slate-200 mb-1">{{ step.label }}</p>
+            <p class="text-xs text-slate-500 leading-relaxed">{{ step.desc }}</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Main -->
     <main class="max-w-4xl mx-auto px-6 py-10">
-      <div class="mb-8">
-        <h1 class="text-2xl font-semibold text-white">Your Teams</h1>
-        <p class="text-slate-500 text-sm mt-1">Each team: 1 PM · 2 SWE · 1 Designer</p>
+      <div class="flex items-center justify-between mb-6">
+        <div>
+          <h2 class="text-lg font-semibold text-white">Your Teams</h2>
+          <p class="text-slate-500 text-xs mt-0.5">1 PM · 2 SWE · 1 Designer per team</p>
+        </div>
+        <button
+          class="border border-blue-600 text-blue-400 font-medium px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-colors"
+          @click="openModal"
+        >
+          + New Team
+        </button>
       </div>
 
       <!-- Loading -->
-      <p v-if="loading" class="text-slate-500 text-sm">Loading...</p>
+      <div v-if="loading" class="flex items-center gap-2 text-slate-500 text-sm py-8">
+        <span class="animate-pulse">●</span> Loading teams...
+      </div>
 
       <!-- Empty -->
-      <div v-else-if="!teams.length" class="border border-dashed border-slate-700 bg-slate-900/40 p-16 text-center">
-        <p class="text-slate-500 mb-4">No teams yet.</p>
+      <div v-else-if="!teams.length" class="border border-dashed border-slate-800 bg-slate-900/30 p-16 text-center">
+        <p class="text-slate-400 font-medium mb-1">No teams yet</p>
+        <p class="text-slate-600 text-sm mb-6">Build your first AI team to start cloning developers.</p>
         <button
-          class="border border-blue-500 text-blue-400 font-medium px-6 py-2 hover:bg-blue-600 hover:text-white transition-colors"
+          class="bg-blue-600 hover:bg-blue-500 text-white font-semibold px-6 py-2.5 text-sm transition-colors"
           @click="openModal"
         >
-          Create First Team
+          Build First Team
         </button>
       </div>
 
@@ -121,41 +188,44 @@ onMounted(() => {
           v-for="team in teams"
           :key="team.id"
           :to="`/teams/${team.id}`"
-          class="block bg-slate-900/60 border border-slate-800 hover:border-slate-600 transition-colors p-5 group"
+          class="block bg-slate-900/50 border border-slate-800 hover:border-slate-600 hover:bg-slate-900/80 transition-all p-5 group"
         >
-          <div class="flex items-start justify-between mb-3">
+          <div class="flex items-start justify-between mb-4">
             <div>
-              <p class="text-xs text-slate-500 mb-0.5">Team #{{ team.id }}</p>
-              <h2 class="font-semibold text-white group-hover:text-blue-400 transition-colors">
+              <p class="text-xs text-slate-600 font-mono mb-1">#{{ team.id }}</p>
+              <h2 class="font-semibold text-white group-hover:text-blue-400 transition-colors text-base">
                 {{ team.name }}
               </h2>
             </div>
             <span
-              class="text-xs font-medium border px-2 py-0.5"
+              class="text-xs font-medium border px-2 py-0.5 mt-0.5"
               :class="filledCount(team) === 4
-                ? 'border-green-600 text-green-400 bg-green-950/50'
-                : 'border-slate-700 text-slate-500'"
+                ? 'border-green-600 text-green-400 bg-green-950/40'
+                : filledCount(team) > 0
+                  ? 'border-amber-700 text-amber-400 bg-amber-950/40'
+                  : 'border-slate-700 text-slate-600'"
             >
-              {{ filledCount(team) }}/4
+              {{ filledCount(team) }}/4 filled
             </span>
           </div>
 
-          <div class="flex flex-wrap gap-1.5">
+          <div class="flex flex-wrap gap-1.5 mb-4">
             <span
               v-for="slot in team.slots"
               :key="slot.id"
-              class="text-xs px-2 py-0.5 border"
+              class="text-xs px-2 py-0.5 border font-mono"
               :class="slot.filled
-                ? 'border-green-600 text-green-400 bg-green-950/50'
-                : 'border-slate-700 text-slate-600'"
+                ? 'border-green-700 text-green-400 bg-green-950/30'
+                : 'border-slate-800 text-slate-600'"
             >
-              {{ ROLE_LABEL[slot.role] }}{{ slot.slot_index > 0 ? ` #${slot.slot_index + 1}` : '' }}
+              {{ ROLE_LABEL[slot.role] }}{{ slot.slot_index > 0 ? ` ${slot.slot_index + 1}` : '' }}
             </span>
           </div>
 
-          <p class="text-xs text-slate-500 mt-3">
-            {{ new Date(team.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) }}
-          </p>
+          <div class="flex items-center justify-between text-xs text-slate-600">
+            <span>{{ new Date(team.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) }}</span>
+            <span class="group-hover:text-blue-400 transition-colors">Open →</span>
+          </div>
         </NuxtLink>
       </div>
     </main>
