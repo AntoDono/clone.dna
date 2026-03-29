@@ -3,11 +3,16 @@ Candidates router — GitHub headhunting, candidate selection, and profile extra
 
 Three candidate discovery paths:
   1. AI headhunt stream (SSE) — searches GitHub by role, streams structured profiles;
-     results cached in-memory per team to avoid redundant API calls.
+     results cached in-memory per team (_headhunt_cache) to avoid redundant API calls.
   2. Website extraction — scrapes a personal site or portfolio URL via Grok.
   3. Resume extraction — accepts raw resume text, extracts a structured profile via Grok.
 
 All three paths normalize to the same profile shape and persist via save_candidate().
+
+Caching:
+  - _headhunt_cache  (team_id → list[profile])  — full headhunt results per team
+  - _search_cache    ((team_id, slot_id) → SearchResult) — per-slot search results
+  Both caches are invalidated on candidate select/remove. Accept ?force=true to bypass.
 """
 
 import asyncio
@@ -107,7 +112,7 @@ def clear_headhunt_cache(team_id: int):
 
 @router.get("/teams/{team_id}/roles/{slot_id}/search")
 def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
-    """Return cached or freshly fetched candidates for a specific role slot."""
+    """Return cached or freshly fetched candidates for a role slot. Accepts ?force=true to bypass _search_cache."""
     slot = get_slot(team_id, slot_id)
     key = (team_id, slot_id)
     if not force and key in _search_cache:

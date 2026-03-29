@@ -154,6 +154,97 @@ def generate_github_description(profile: dict, role: str) -> Optional[str]:
         return None
 
 
+class SemanticAnalysis(BaseModel):
+    """Structured result of Grok's semantic analysis of a developer's actual source code."""
+    tech_skills: list[str] = Field(description="Technical skills inferred from code, max 8")
+    soft_skills: list[str] = Field(description="Soft skills inferred from code style and patterns, max 6")
+    architectural_patterns: list[str] = Field(description="Architectural patterns observed, max 5")
+    code_quality_signals: list[str] = Field(description="Code quality indicators observed, max 5")
+    domain_expertise: list[str] = Field(description="Problem domains inferred from code, max 5")
+    description: str = Field(description="1-2 sentence role-fit assessment based on code analysis")
+
+
+SEMANTIC_ANALYSIS_SYSTEM = """You are a senior software architect and talent evaluator for Clone.dna.
+
+Perform deep semantic analysis of a developer's actual source code to produce a structured candidate profile.
+
+Analyze:
+1. **Architectural patterns** — MVC, event-driven, microservices, functional, reactive, CQRS, hexagonal, etc.
+2. **Code quality signals** — naming conventions, modularity, error handling, test coverage, documentation quality
+3. **Technical skills** — specific languages, frameworks, libraries evident in the code (not just file extensions)
+4. **Domain expertise** — the problem domains this developer works in (payments, ML pipelines, compilers, etc.)
+5. **Soft skills inferred** — clean code = attention to detail; good tests = quality mindset; clear docs = communication
+
+Be specific and factual — base your analysis only on what you observe in the provided code.
+
+Respond with a valid JSON object:
+{
+  "tech_skills": ["string", ...],            // max 8, specific (e.g. "Redis pub/sub", not "databases")
+  "soft_skills": ["string", ...],            // max 6, inferred from code style
+  "architectural_patterns": ["string", ...], // max 5
+  "code_quality_signals": ["string", ...],   // max 5
+  "domain_expertise": ["string", ...],       // max 5
+  "description": "string"                    // 1-2 sentences on role fit
+}"""
+
+
+def semantic_analyze_code(
+    code_samples: list[dict],
+    candidate_meta: dict,
+    role: str,
+) -> Optional["SemanticAnalysis"]:
+    """
+    Run Grok semantic analysis on a candidate's actual source code samples.
+
+    Extracts architectural patterns, code quality signals, domain expertise,
+    and richer skill inference from real code — not bio keywords or language names.
+    Returns None if Grok is unavailable, call fails, or no code samples provided.
+    """
+    if not code_samples:
+        return None
+    try:
+        client = get_grok_client()
+    except RuntimeError:
+        return None
+
+    # Build code block capped at ~9K chars across up to 3 repos
+    code_block = ""
+    for sample in code_samples[:3]:
+        repo = sample.get("repo", "unknown")
+        code = sample.get("code", "")[:3000]
+        code_block += f"\n\n=== REPO: {repo} ===\n{code}"
+    code_block = code_block[:9000]
+
+    role_context = ROLE_CONTEXT.get(role, "")
+    name = candidate_meta.get("name") or candidate_meta.get("github_handle", "")
+    bio = (candidate_meta.get("bio") or "")[:200]
+
+    user_message = (
+        f"Developer: {name} (GitHub: {candidate_meta.get('github_handle', '')})\n"
+        f"Role being evaluated for: {role.upper()}\n"
+        f"Bio: {bio or 'Not provided'}\n"
+        f"{role_context}\n\n"
+        f"--- SOURCE CODE SAMPLES ---\n{code_block}"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model=GROK_MODEL,
+            messages=[
+                {"role": "system", "content": SEMANTIC_ANALYSIS_SYSTEM},
+                {"role": "user",   "content": user_message},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.2,
+        )
+        raw = response.choices[0].message.content
+        data = json.loads(raw)
+        return SemanticAnalysis(**data)
+    except Exception as e:
+        print(f"[grok] semantic analysis failed: {e}")
+        return None
+
+
 def candidate_extract_to_profile(extract: CandidateExtract, source_url: str = "") -> dict:
     """Convert a CandidateExtract Pydantic model to the flat profile dict shape used throughout the app."""
     return {

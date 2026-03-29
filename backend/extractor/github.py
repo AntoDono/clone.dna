@@ -6,7 +6,8 @@ import random
 from typing import Optional
 import requests
 
-from .schema import generate_github_description
+from .schema import generate_github_description, semantic_analyze_code
+from trainer.github import fetch_repo_code
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +198,18 @@ def search_candidates(role: str, limit: int = 5) -> list[dict]:
 
 
 def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
-    """Fetch a GitHub user's public data and build a structured candidate profile. Infers technical skills from languages/topics and soft skills from bio patterns."""
+    """
+    Build a structured candidate profile by combining GitHub metadata with
+    Grok-powered semantic analysis of the candidate's actual source code.
+
+    Two-pass approach:
+      1. Keyword baseline — language names, bio patterns, and repo topics produce
+         an initial skill set that always succeeds even if Grok is unavailable.
+      2. Semantic enrichment — fetches real source code from the candidate's top
+         3 repos, then calls Grok to extract architectural patterns, code quality
+         signals, domain expertise, and semantically-grounded skills. Semantic
+         results take priority over keyword-derived ones when available.
+    """
     user = _get(f"{GITHUB_API}/users/{handle}")
     if not user or not isinstance(user, dict):
         return None
@@ -234,37 +246,79 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
         for lang, count in sorted(lang_counts.items(), key=lambda x: -x[1])
     }
 
-    # ── Technical skills (from languages) ────────────────────────────────────
-    tech_skills: list[str] = []
+    # ── Pass 1: Keyword baseline (languages + bio patterns) ───────────────────
+    baseline_tech: list[str] = []
     for lang in list(lang_pct.keys())[:4]:
         mapped = LANG_SKILL_MAP.get(lang)
-        if mapped and mapped not in tech_skills:
-            tech_skills.append(mapped)
-
-    # Add topics as technical signals
+        if mapped and mapped not in baseline_tech:
+            baseline_tech.append(mapped)
     for repo in top_repos:
         for topic in repo.get("topics", [])[:2]:
             label = topic.replace("-", " ").title()
-            if label not in tech_skills and len(tech_skills) < 6:
-                tech_skills.append(label)
+            if label not in baseline_tech and len(baseline_tech) < 6:
+                baseline_tech.append(label)
 
-    # ── Soft skills (from bio keyword analysis) ───────────────────────────────
     bio_text = " ".join(filter(None, [
         user.get("bio") or "",
         user.get("company") or "",
         user.get("blog") or "",
     ])).lower()
-
-    soft_skills: list[str] = []
+    baseline_soft: list[str] = []
     for triggers, label in BIO_SKILL_PATTERNS:
-        if any(t in bio_text for t in triggers) and label not in soft_skills:
-            soft_skills.append(label)
-
-    # Pad with role defaults if bio is sparse
-    if role and len(soft_skills) < 3:
+        if any(t in bio_text for t in triggers) and label not in baseline_soft:
+            baseline_soft.append(label)
+    if role and len(baseline_soft) < 3:
         for fallback in ROLE_SOFT_SKILL_FALLBACKS.get(role, []):
-            if fallback not in soft_skills and len(soft_skills) < 6:
-                soft_skills.append(fallback)
+            if fallback not in baseline_soft and len(baseline_soft) < 6:
+                baseline_soft.append(fallback)
+
+    # ── Pass 2: Semantic enrichment via Grok code analysis ────────────────────
+    code_samples: list[dict] = []
+    for repo in top_repos[:3]:
+        try:
+            code = fetch_repo_code(handle, repo["name"])
+            if code:
+                code_samples.append({"repo": repo["name"], "code": code})
+        except Exception:
+            pass
+
+    semantic = None
+    if code_samples:
+        candidate_meta = {
+            "github_handle": handle,
+            "name": user.get("name") or handle,
+            "bio": user.get("bio") or "",
+        }
+        semantic = semantic_analyze_code(code_samples, candidate_meta, role or "swe")
+
+    if semantic:
+        # Semantic results take priority; baseline fills gaps
+        tech_skills = list(dict.fromkeys(semantic.tech_skills + baseline_tech))[:8]
+        soft_skills = list(dict.fromkeys(semantic.soft_skills + baseline_soft))[:8]
+        description = semantic.description
+        architectural_patterns = semantic.architectural_patterns
+        code_quality_signals   = semantic.code_quality_signals
+        domain_expertise       = semantic.domain_expertise
+    else:
+        tech_skills = baseline_tech
+        soft_skills = baseline_soft
+        # Fall back to bio-based Grok description, then template
+        profile_so_far = {
+            "name": user.get("name") or handle,
+            "bio": (user.get("bio") or "")[:200],
+            "location": user.get("location") or "",
+            "followers": user.get("followers", 0),
+            "public_repos": user.get("public_repos", 0),
+            "top_repos": top_repos,
+            "languages": lang_pct,
+            "skills": baseline_tech,
+        }
+        description = generate_github_description(profile_so_far, role or "swe")
+        if not description:
+            description = random.choice(ROLE_DESCRIPTIONS.get(role or "swe", ROLE_DESCRIPTIONS["swe"]))
+        architectural_patterns = []
+        code_quality_signals   = []
+        domain_expertise       = []
 
     # ── Combined skills list (soft first for non-technical roles) ─────────────
     if role in ("pm", "designer"):
@@ -273,34 +327,22 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
         skills = tech_skills + [s for s in soft_skills if s not in tech_skills]
     skills = skills[:10]
 
-    # ── Role-fit description (Grok-generated, falls back to template) ─────────
-    profile_so_far = {
-        "name": user.get("name") or handle,
-        "bio": (user.get("bio") or "")[:200],
-        "location": user.get("location") or "",
-        "followers": user.get("followers", 0),
-        "public_repos": user.get("public_repos", 0),
-        "top_repos": top_repos,
-        "languages": lang_pct,
-        "skills": skills,
-    }
-    description = generate_github_description(profile_so_far, role or "swe")
-    if not description:
-        description_options = ROLE_DESCRIPTIONS.get(role or "swe", ROLE_DESCRIPTIONS["swe"])
-        description = random.choice(description_options)
-
     return {
-        "github_handle": handle,
-        "name":          user.get("name") or handle,
-        "avatar_url":    user.get("avatar_url"),
-        "bio":           (user.get("bio") or "")[:200],
-        "location":      user.get("location") or "",
-        "followers":     user.get("followers", 0),
-        "public_repos":  user.get("public_repos", 0),
-        "top_repos":     top_repos,
-        "languages":     lang_pct,
-        "skills":        skills,
-        "soft_skills":   soft_skills,
-        "description":   description,
-        "profile_url":   user.get("html_url", f"https://github.com/{handle}"),
+        "github_handle":        handle,
+        "name":                 user.get("name") or handle,
+        "avatar_url":           user.get("avatar_url"),
+        "bio":                  (user.get("bio") or "")[:200],
+        "location":             user.get("location") or "",
+        "followers":            user.get("followers", 0),
+        "public_repos":         user.get("public_repos", 0),
+        "top_repos":            top_repos,
+        "languages":            lang_pct,
+        "skills":               skills,
+        "soft_skills":          soft_skills,
+        "description":          description,
+        "profile_url":          user.get("html_url", f"https://github.com/{handle}"),
+        # Semantic signals — present when code analysis succeeded, empty otherwise
+        "architectural_patterns": architectural_patterns,
+        "code_quality_signals":   code_quality_signals,
+        "domain_expertise":       domain_expertise,
     }
