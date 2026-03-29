@@ -125,30 +125,33 @@ onMounted(fetchTeam)
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950">
+  <div style="min-height:100vh; background:var(--bg);">
 
     <!-- Header -->
-    <header class="bg-slate-900/80 border-b border-slate-800 px-6 py-4 flex items-center justify-between backdrop-blur">
-      <NuxtLink to="/" class="flex items-center gap-3 text-blue-400 hover:text-blue-300 transition-colors">
-        <span class="text-xl font-bold tracking-tight text-white">Clone.dna</span>
-        <span class="text-sm text-slate-500">← Teams</span>
-      </NuxtLink>
-      <div class="flex items-center gap-4">
-        <span class="text-sm text-slate-500">{{ slotsFilled() }}/4 filled</span>
+    <header class="page-header">
+      <div class="t-header-left">
+        <NuxtLink to="/" class="logo font-display">Clone.dna</NuxtLink>
+        <span class="header-sep">/</span>
+        <span class="header-page" style="max-width:200px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
+          {{ team?.name ?? '…' }}
+        </span>
+      </div>
+      <div class="t-header-right">
+        <span class="slots-badge font-mono">{{ slotsFilled() }}/4 filled</span>
         <Transition name="fade-btn">
-          <div v-if="team && allFilled" class="flex items-center gap-3">
+          <div v-if="team && allFilled" class="flex items-center gap-2">
             <NuxtLink
               v-if="dnaComplete"
               :to="`/teams/${teamId}/build`"
-              class="text-sm font-semibold px-4 py-2 border border-green-600 text-green-400 hover:bg-green-950/40 transition-colors"
+              class="btn btn-primary"
+              style="font-size:13px;"
             >
               Build with Team →
             </NuxtLink>
             <button
-              class="text-sm font-semibold px-4 py-2 border transition-colors"
-              :class="dnaComplete
-                ? 'border-slate-700 text-slate-400 hover:bg-slate-800/40'
-                : 'border-blue-600 text-blue-400 hover:bg-blue-950/40'"
+              class="btn"
+              :class="dnaComplete ? 'btn-secondary' : 'btn-primary'"
+              style="font-size:13px;"
               @click="showCloneDna = true"
             >
               {{ dnaComplete ? '↺ Re-clone DNA' : 'Clone DNA →' }}
@@ -159,31 +162,37 @@ onMounted(fetchTeam)
     </header>
 
     <!-- Loading / Error -->
-    <div v-if="loading" class="max-w-4xl mx-auto px-6 py-10 text-slate-500 text-sm">Loading...</div>
-    <div v-else-if="pageError" class="max-w-4xl mx-auto px-6 py-10 text-red-400 text-sm">{{ pageError }}</div>
+    <div v-if="loading" class="t-state">
+      <span class="streaming-dot"></span>
+      <span style="color:var(--text-muted); font-size:14px;">Loading team…</span>
+    </div>
+    <div v-else-if="pageError" class="error-callout" style="margin:32px auto; max-width:600px;">{{ pageError }}</div>
 
     <!-- Content -->
-    <main v-else-if="team" class="max-w-4xl mx-auto px-6 py-10">
+    <main v-else-if="team" class="t-main">
 
-      <!-- Title -->
-      <div class="mb-8">
-        <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">Team #{{ team.id }}</p>
-        <h1 class="text-2xl font-semibold text-white">{{ team.name }}</h1>
-        <div v-if="team.discord_pair_code" class="mt-2 flex items-center gap-2">
-          <span class="text-xs text-slate-500">Discord pair code:</span>
-          <code class="text-sm font-mono text-indigo-400 bg-slate-800 px-2 py-0.5 rounded select-all">{{ team.discord_pair_code }}</code>
+      <!-- Title row -->
+      <div class="t-title-row animate-in">
+        <div>
+          <p class="t-team-num font-mono">Team #{{ team.id }}</p>
+          <h1 class="t-team-name font-display">{{ team.name }}</h1>
+        </div>
+        <div v-if="team.discord_pair_code" class="discord-code">
+          <span class="discord-label">Discord pair code</span>
+          <code class="discord-val font-mono">{{ team.discord_pair_code }}</code>
           <button
-            class="text-xs px-2 py-0.5 rounded transition-colors"
-            :class="codeCopied ? 'text-green-400 bg-green-950' : 'text-slate-500 hover:text-slate-300 bg-slate-800 hover:bg-slate-700'"
+            class="btn btn-ghost"
+            style="font-size:12px; padding:4px 10px;"
+            :style="codeCopied ? 'color:var(--accent)' : ''"
             @click="copyPairCode"
           >
-            {{ codeCopied ? 'Copied' : 'Copy' }}
+            {{ codeCopied ? '✓ Copied' : 'Copy' }}
           </button>
         </div>
       </div>
 
       <!-- Role slots grid -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
+      <div class="slots-grid stagger">
         <RoleSlot
           v-for="slot in team.slots"
           :key="slot.id"
@@ -200,53 +209,38 @@ onMounted(fetchTeam)
       </div>
 
       <!-- Extraction error -->
-      <div
-        v-if="extractionError"
-        class="mb-4 border border-red-800 bg-red-950/50 px-4 py-3 flex items-center justify-between text-sm"
-      >
-        <span class="text-red-400">{{ extractionError }}</span>
-        <button class="text-red-500 hover:text-red-300 ml-4" @click="extractionError = ''">✕</button>
+      <div v-if="extractionError" class="error-callout" style="margin-bottom:16px; display:flex; justify-content:space-between; align-items:center;">
+        <span>{{ extractionError }}</span>
+        <button class="btn btn-ghost" style="color:var(--red);" @click="extractionError = ''">✕</button>
       </div>
 
       <!-- Search results panel -->
-      <div v-if="isSearching || searchResults || searchError">
+      <div v-if="isSearching || searchResults || searchError" class="search-panel animate-in">
 
         <!-- Searching -->
-        <div v-if="isSearching" class="bg-slate-900/60 border border-slate-700 p-8 text-center">
-          <p class="text-blue-400 font-medium">Scanning GitHub...</p>
-          <p class="text-slate-500 text-sm mt-1">
-            Finding candidates for
-            {{ ROLE_META[team.slots.find(s => s.id === activeSlotId)?.role ?? 'swe']?.label }}
-          </p>
+        <div v-if="isSearching" class="card search-loading">
+          <span class="streaming-dot"></span>
+          <div>
+            <p style="font-weight:600; color:var(--text-primary); font-size:14px;">Scanning GitHub…</p>
+            <p style="color:var(--text-muted); font-size:13px; margin-top:2px;">
+              Finding candidates for {{ ROLE_META[team.slots.find(s => s.id === activeSlotId)?.role ?? 'swe']?.label }}
+            </p>
+          </div>
         </div>
 
         <!-- Error -->
-        <div v-else-if="searchError" class="border border-red-800 bg-red-950/50 px-4 py-3 text-sm text-red-400">
-          {{ searchError }}
-        </div>
+        <div v-else-if="searchError" class="error-callout">{{ searchError }}</div>
 
         <!-- Results -->
         <div v-else-if="searchResults">
-          <div class="flex items-center justify-between mb-4">
-            <h2 class="font-semibold text-white">
-              {{ searchResults.candidates.length }} candidates found
-              <span class="font-normal text-slate-500 text-sm ml-1">
-                for {{ ROLE_META[searchResults.role]?.label }}
-              </span>
+          <div class="search-results-header">
+            <h2 class="search-results-title">
+              {{ searchResults.candidates.length }} candidates
+              <span class="search-results-role">for {{ ROLE_META[searchResults.role]?.label }}</span>
             </h2>
-            <div class="flex items-center gap-2">
-              <button
-                class="text-sm text-blue-500 hover:text-blue-300 border border-blue-800 px-3 py-1 transition-colors"
-                @click="scanSlot(activeSlotId!, true)"
-              >
-                ↺ Refresh
-              </button>
-              <button
-                class="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 px-3 py-1 transition-colors"
-                @click="searchResults = null; activeSlotId = null"
-              >
-                Close
-              </button>
+            <div class="flex gap-2">
+              <button class="btn btn-secondary" style="font-size:12px;" @click="scanSlot(activeSlotId!, true)">↺ Refresh</button>
+              <button class="btn btn-ghost" @click="searchResults = null; activeSlotId = null">Close</button>
             </div>
           </div>
           <CandidateSearch
@@ -259,7 +253,8 @@ onMounted(fetchTeam)
 
       </div>
     </main>
-    <!-- Headhunt overlay (shown when ?headhunt=true on first load) -->
+
+    <!-- Headhunt overlay -->
     <Teleport to="body">
       <HeadHuntOverlay
         v-if="showHeadhunt && team"
@@ -283,13 +278,88 @@ onMounted(fetchTeam)
 </template>
 
 <style scoped>
-.fade-btn-enter-active,
-.fade-btn-leave-active {
-  transition: opacity 0.3s, transform 0.3s;
+.logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
+.header-sep { color: var(--border-mid); margin: 0 10px; }
+.header-page { font-size: 13px; color: var(--text-muted); }
+.t-header-left { display: flex; align-items: center; }
+.t-header-right { display: flex; align-items: center; gap: 10px; }
+.slots-badge {
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  padding: 3px 10px;
+  border-radius: 20px;
 }
-.fade-btn-enter-from,
-.fade-btn-leave-to {
-  opacity: 0;
-  transform: translateX(8px);
+
+.t-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 48px 32px;
+  max-width: 800px;
+  margin: 0 auto;
 }
+.error-callout {
+  font-size: 13px;
+  color: var(--red);
+  background: var(--red-light);
+  border: 1px solid #FECACA;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+.t-main { max-width: 860px; margin: 0 auto; padding: 36px 32px 80px; }
+
+.t-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.t-team-num { font-size: 11px; color: var(--text-muted); letter-spacing: 0.05em; margin-bottom: 4px; }
+.t-team-name { font-size: 28px; font-weight: 400; letter-spacing: -0.02em; color: var(--text-primary); }
+
+.discord-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 6px 12px;
+}
+.discord-label { font-size: 11px; color: var(--text-muted); }
+.discord-val { font-size: 13px; color: var(--text-primary); user-select: all; }
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.search-panel { margin-top: 8px; }
+.search-loading {
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.search-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.search-results-title { font-size: 15px; font-weight: 600; color: var(--text-primary); }
+.search-results-role { font-size: 13px; font-weight: 400; color: var(--text-muted); margin-left: 6px; }
+
+.fade-btn-enter-active, .fade-btn-leave-active { transition: opacity 0.25s, transform 0.25s; }
+.fade-btn-enter-from, .fade-btn-leave-to { opacity: 0; transform: translateX(8px); }
+
+@media (max-width: 640px) { .slots-grid { grid-template-columns: 1fr; } }
 </style>

@@ -33,48 +33,100 @@ function select(candidate: CandidateProfile) {
 </script>
 
 <template>
-  <div class="space-y-3">
+  <div class="cs-list">
     <div
       v-for="candidate in candidates"
       :key="candidate.github_handle"
-      class="bg-slate-900/60 border transition-colors"
-      :class="expandedHandle === candidate.github_handle
-        ? 'border-blue-500'
-        : 'border-slate-800 hover:border-slate-600'"
+      class="cs-item card"
+      :class="{ 'cs-item--open': expandedHandle === candidate.github_handle }"
     >
-      <!-- Header row — always visible -->
+      <!-- Header row -->
       <button
-        class="w-full flex items-start gap-4 p-4 text-left"
+        class="cs-header"
         @click="toggle(candidate.github_handle)"
       >
-        <ProfilingTree :candidate="candidate" :expanded="false" class="flex-1" />
-        <span class="text-slate-500 mt-1 flex-shrink-0">{{ expandedHandle === candidate.github_handle ? '▲' : '▼' }}</span>
+        <ProfilingTree :candidate="candidate" :expanded="false" class="cs-tree" />
+        <span class="cs-chevron">{{ expandedHandle === candidate.github_handle ? '▲' : '▼' }}</span>
       </button>
 
       <!-- Expanded profile -->
-      <div v-if="expandedHandle === candidate.github_handle" class="px-4 pb-4 border-t border-slate-800 pt-4">
+      <div v-if="expandedHandle === candidate.github_handle" class="cs-expanded">
+        <hr class="cs-divider" />
         <ProfilingTree :candidate="candidate" :expanded="true" />
 
-        <div class="flex items-center justify-between mt-5 pt-4 border-t border-slate-800">
+        <div class="cs-footer">
           <a
             v-if="candidate.profile_url"
             :href="candidate.profile_url"
             target="_blank"
             rel="noopener"
-            class="text-xs text-slate-500 hover:text-blue-400 transition-colors"
+            class="cs-profile-link font-mono"
           >
             ↗ View profile
           </a>
           <div v-else class="flex-1"></div>
           <button
-            class="border border-blue-500 text-blue-400 text-sm font-medium px-5 py-2 hover:bg-blue-600 hover:text-white transition-colors disabled:opacity-40"
+            class="btn btn-primary"
+            style="font-size:13px;"
             :disabled="!!selecting"
             @click="select(candidate)"
           >
-            {{ selecting === candidate.github_handle ? 'Selecting...' : 'Select Candidate' }}
+            <span v-if="selecting === candidate.github_handle" class="streaming-dot" style="background:#fff;"></span>
+            {{ selecting === candidate.github_handle ? 'Selecting…' : 'Select Candidate' }}
           </button>
         </div>
       </div>
     </div>
   </div>
 </template>
+
+<style scoped>
+.cs-list { display: flex; flex-direction: column; gap: 8px; }
+
+.cs-item {
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.cs-item--open { border-color: #93C5FD !important; }
+
+.cs-header {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.cs-header:hover { background: #FAF8F4; }
+
+.cs-tree { flex: 1; }
+.cs-chevron { font-size: 10px; color: #A8A098; margin-top: 2px; flex-shrink: 0; }
+
+.cs-expanded { padding: 0 16px 16px; }
+.cs-divider {
+  border: none;
+  border-top: 1px solid #E2DDD6;
+  margin: 0 0 16px;
+}
+
+.cs-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #E2DDD6;
+  gap: 12px;
+}
+.cs-profile-link {
+  font-size: 11px;
+  color: #A8A098;
+  text-decoration: none;
+  transition: color 0.12s;
+}
+.cs-profile-link:hover { color: #166534; }
+</style>
