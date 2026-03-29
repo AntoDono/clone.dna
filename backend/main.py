@@ -37,8 +37,10 @@ app = FastAPI(title="Clone.dna API", version="1.0.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
+    allow_origin_regex=r"https?://.*",
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=False,
 )
 
 app.include_router(teams_router)
