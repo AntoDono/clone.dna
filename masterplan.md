@@ -162,6 +162,15 @@ tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
 # 4. Responses stream back over SSE in sequence
 ```
 
+**Discord bot (DM interface to your team):**
+
+```python
+# DM the bot a 6-char pair code → links your Discord account to a team
+# Every subsequent DM runs full PM orchestration:
+#   PM decomposes → Grok assigns → specialists respond → streamed back as Discord messages
+# Requires DISCORD_BOT_TOKEN env var; starts automatically alongside FastAPI
+```
+
 ### 2.7 Data Model
 
 ```json
@@ -200,6 +209,30 @@ tokenizer = AutoTokenizer.from_pretrained("dnas/1/torvalds")
     }
 }
 ```
+
+### 2.8 Discord Integration — Your Team in Your DMs
+
+The web UI is where you build teams and mint blocks. Discord is where you use them.
+
+Once a team has cloned candidates, any team member can pair their Discord account and talk to their assembled team directly via DM — no browser, no context switching, no scheduling. Send a message to the bot and the full PM orchestration pipeline runs: the PM decomposes the task, Grok assigns sub-tasks to specialists, each specialist's LoRA adapter is hot-swapped and responds in sequence. The conversation streams back in real time, with tool calls (file writes, command execution) rendered as readable summaries instead of raw JSON.
+
+**Why this matters:** The value of a .dna team collapses if you have to context-switch to a web app every time you want to use it. Discord is where developers already live. Pairing takes one message — paste your team's 6-character code, and every subsequent DM routes through the orchestration flow. Your team of domain experts is reachable from anywhere you can send a Discord message: your phone, your desktop, mid-conversation in a server. The expertise is always on, always available, and fits into the workflow you already have.
+
+**Pairing flow:**
+
+1. Create a team via the web UI — the team page shows a unique `discord_pair_code`
+2. DM the Clone.dna bot the 6-character code — the bot links your Discord account to that team
+3. Every subsequent DM routes through PM orchestration — task decomposition, specialist assignment, adapter hot-swap, streaming responses
+
+**What you get:**
+
+- Full PM orchestration via DM — the same multi-expert pipeline that runs in the web UI
+- Streaming responses with live message edits — see each specialist's output as it generates
+- Tool-use execution — clones can read files, write code, and run commands in the team's sandboxed workspace, with actions rendered as inline summaries
+- Persistent conversation history — messages are stored in the same `ChatMessage` table as the web UI, so switching between Discord and the browser is seamless
+- Multi-message splitting — long responses automatically split across messages to stay within Discord's limits
+
+**Architecture:** The bot runs as an async task alongside the FastAPI server, started automatically when `DISCORD_BOT_TOKEN` is set. It reuses the same orchestration pipeline (`assign_tasks`, `build_pm_prompt`, `grok_chat`) and the same sandboxed workspace as the web UI — no separate backend, no duplicated logic. The `DiscordPairing` model maps Discord user IDs to teams via the pairing code.
 
 ---
 
@@ -370,6 +403,7 @@ For production deployment: multiple vLLM instances (using the exported PEFT-comp
 
 - **REST registry** — GET /registry, GET /registry/search?skills=python&domain=backend, GET /registry/{team_id}/{handle}, GET /registry/{team_id}/{handle}/download
 - **REST build API** — POST /teams/{id}/build/chat (SSE), POST /teams/{id}/build/orchestrate (SSE), GET /teams/{id}/build/messages
+- **Discord bot** — DM-based interface to the full PM orchestration pipeline. Pair via a 6-character code, then talk to your team from anywhere Discord runs. Same orchestration backend, same sandboxed workspace, persistent history shared with the web UI
 - **LLM Tool Schema** — registry and headhunter exposed as standard tool-use functions. Clones can emit structured tool calls (`read_file`, `write_file`, `run_command`) executed in a sandboxed workspace
 
 ### Extensibility
