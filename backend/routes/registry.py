@@ -30,6 +30,7 @@ _METADATA_FILES = [
     "eval.json",
     "sources.json",
     "consent.json",
+    "teacher_config.json",
     "profile.md",
     "adapter_config.json",
 ]

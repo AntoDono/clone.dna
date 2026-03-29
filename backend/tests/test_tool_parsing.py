@@ -136,6 +136,30 @@ class TestExecuteTool:
         assert ok
         assert "hello" in result
 
+    def test_run_command_blocks_shell_chaining(self, tmp_path):
+        result, ok = execute_tool(str(tmp_path), "run_command", {"command": "echo hi && pwd"})
+        assert not ok
+        assert "blocked" in result.lower() or "single command" in result.lower()
+
+    def test_run_command_blocks_destructive_prefixes(self, tmp_path):
+        result, ok = execute_tool(str(tmp_path), "run_command", {"command": "rm -rf ."})
+        assert not ok
+        assert "blocked" in result.lower()
+
+    def test_tool_execution_is_audited(self, tmp_path):
+        result, ok = execute_tool(str(tmp_path), "write_file", {"path": "audit.txt", "content": "tracked"})
+        assert ok
+        assert "Wrote" in result
+
+        audit_path = tmp_path / ".clone_dna" / "tool_audit.jsonl"
+        assert audit_path.exists()
+        lines = audit_path.read_text().splitlines()
+        assert lines
+        last = json.loads(lines[-1])
+        assert last["tool"] == "write_file"
+        assert last["arguments"]["path"] == "audit.txt"
+        assert last["success"] is True
+
     def test_unknown_tool(self, tmp_path):
         result, ok = execute_tool(str(tmp_path), "nonexistent_tool", {})
         assert not ok
