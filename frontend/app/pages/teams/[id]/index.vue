@@ -239,7 +239,7 @@ onMounted(fetchTeam)
                 class="text-sm text-blue-500 hover:text-blue-300 border border-blue-800 px-3 py-1 transition-colors"
                 @click="scanSlot(activeSlotId!, true)"
               >
-                Rescan
+                ↺ Refresh
               </button>
               <button
                 class="text-sm text-slate-500 hover:text-slate-300 border border-slate-700 px-3 py-1 transition-colors"

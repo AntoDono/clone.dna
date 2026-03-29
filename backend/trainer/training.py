@@ -219,6 +219,61 @@ def compute_humaneval_proxy(pairs: list[dict]) -> float | None:
     return round(statistics.mean(sample_scores), 4)
 
 
+def compute_adapter_layer_drift(model, adapter_name: str) -> dict:
+    """Measure how much each LoRA layer moved from its zero-initialization during training.
+
+    A freshly initialised LoRA adapter has lora_A drawn from N(0, σ) and lora_B set to
+    zero, so the effective weight update BA is identically zero at step 0.  After training,
+    the Frobenius norm ‖W‖_F of each matrix tells you how much that layer's adapter moved
+    — i.e., how much training signal the candidate's code injected into that attention head.
+
+    High drift in q_proj / v_proj relative to k_proj / o_proj is common for code-domain
+    fine-tuning because query and value projections carry more token-level semantic content;
+    low drift across all layers usually indicates underfitting or too few training pairs.
+
+    Returns two sub-dicts:
+      per_layer: {short_param_key: frobenius_norm, ...}  — one entry per lora_A / lora_B tensor
+      summary:   {max_drift_layer, min_drift_layer, mean_drift, max_drift, min_drift}
+    """
+    import torch
+
+    per_layer: dict[str, float] = {}
+    for name, param in model.named_parameters():
+        if adapter_name not in name:
+            continue
+        if "lora_A" not in name and "lora_B" not in name:
+            continue
+        # Shorten PEFT's verbose key: keep only the module path + matrix type
+        # e.g. base_model.model.model.layers.0.self_attn.q_proj.lora_A.train-foo.weight
+        #   →  layers.0.self_attn.q_proj.lora_A
+        short = name
+        for prefix in ("base_model.model.", "model."):
+            if short.startswith(prefix):
+                short = short[len(prefix):]
+                break
+        # Strip trailing ".{adapter_name}.weight"
+        short = short.replace(f".{adapter_name}.weight", "")
+        per_layer[short] = round(param.detach().float().norm().item(), 6)
+
+    if not per_layer:
+        return {"per_layer": {}, "summary": {}}
+
+    norms = list(per_layer.values())
+    max_key = max(per_layer, key=lambda k: per_layer[k])
+    min_key = min(per_layer, key=lambda k: per_layer[k])
+
+    return {
+        "per_layer": per_layer,
+        "summary": {
+            "max_drift_layer": max_key,
+            "min_drift_layer": min_key,
+            "mean_drift":      round(sum(norms) / len(norms), 6),
+            "max_drift":       round(max(norms), 6),
+            "min_drift":       round(min(norms), 6),
+        },
+    }
+
+
 def estimate_latency_overhead_ms(rank: int = 32, num_adapted_modules: int = 4) -> float:
     """Estimate LoRA inference latency overhead in milliseconds.
 
@@ -343,6 +398,7 @@ def train_lora(
     and calls emit() directly from TrainerCallback.on_log().
     """
     handle = candidate.get("github_handle", "")
+    layer_drift: dict = {}  # populated inside the training context, before adapter eviction
 
     try:
         import torch
@@ -560,6 +616,21 @@ def train_lora(
         model.save_pretrained(output_dir, selected_adapters=[training_adapter])
         tokenizer.save_pretrained(output_dir)
 
+        # Measure layer drift before the adapter is evicted from memory.
+        # Must happen here — after training, before delete_adapter — because
+        # the lora_A / lora_B tensors are freed when the adapter is removed.
+        layer_drift = compute_adapter_layer_drift(model, training_adapter)
+        if layer_drift.get("summary"):
+            emit({
+                "phase": "eval",
+                "candidate": handle,
+                "message": (
+                    f"Layer drift — max: {layer_drift['summary']['max_drift']:.4f} "
+                    f"({layer_drift['summary']['max_drift_layer'].split('.')[-2]}), "
+                    f"mean: {layer_drift['summary']['mean_drift']:.4f}"
+                ),
+            })
+
         del trainer
         try:
             model.delete_adapter(training_adapter)
@@ -667,6 +738,7 @@ def train_lora(
             "domain_accuracy": domain_accuracy,
             "humaneval_score": humaneval_score,
         },
+        "layer_drift": layer_drift,
         "teacher_model": "grok-4",
         "created": created_at,
     }

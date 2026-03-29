@@ -9,10 +9,11 @@ Three candidate discovery paths:
 
 All three paths normalize to the same profile shape and persist via save_candidate().
 
-Caching:
-  - _headhunt_cache  (team_id → list[profile])  — full headhunt results per team
-  - _search_cache    ((team_id, slot_id) → SearchResult) — per-slot search results
-  Both caches are invalidated on candidate select/remove. Accept ?force=true to bypass.
+Caching (two layers):
+  - _headhunt_cache  (team_id → list[profile])  — in-memory, full headhunt results per team
+  - _search_cache    ((team_id, slot_id) → SearchResult) — in-memory, per-slot search results
+  - GithubProfileCache — SQLite-backed, 24-hour TTL per (handle, role)
+  All layers are invalidated by DELETE /headhunt/cache or ?force=true on any endpoint.
 """
 
 import asyncio
@@ -84,7 +85,7 @@ async def headhunt_stream(team_id: int, force: bool = Query(False)):
                 yield f"data: {json.dumps({'error': f'No GitHub results for role: {role}. Check GITHUB_TOKEN in .env'})}\n\n"
             for handle in handles:
                 try:
-                    profile = await asyncio.to_thread(build_github_profile, handle, role)
+                    profile = await asyncio.to_thread(build_github_profile, handle, role, force)
                 except Exception:
                     profile = None
                 if profile:
@@ -106,6 +107,11 @@ async def headhunt_stream(team_id: int, force: bool = Query(False)):
 @router.delete("/teams/{team_id}/headhunt/cache", status_code=204)
 def clear_headhunt_cache(team_id: int):
     _headhunt_cache.pop(team_id, None)
+    try:
+        from models import GithubProfileCache
+        GithubProfileCache.delete().execute()
+    except Exception:
+        pass
 
 
 # ── Role search ───────────────────────────────────────────────────────────────
@@ -117,7 +123,7 @@ def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
     key = (team_id, slot_id)
     if not force and key in _search_cache:
         return _search_cache[key]
-    candidates = search_candidates(slot.role, limit=5)
+    candidates = search_candidates(slot.role, limit=5, force=force)
     result = {"role": slot.role, "slot_id": slot_id, "candidates": candidates}
     _search_cache[key] = result
     return result

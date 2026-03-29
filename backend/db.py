@@ -44,9 +44,9 @@ def _migrate_team_columns() -> None:
 
 
 def init_db() -> None:
-    from models import Team, RoleSlot, Candidate, ChatMessage, DiscordPairing  # noqa: F401
+    from models import Team, RoleSlot, Candidate, ChatMessage, DiscordPairing, GithubProfileCache  # noqa: F401
 
     with db:
-        db.create_tables([Team, RoleSlot, Candidate, ChatMessage, DiscordPairing], safe=True)
+        db.create_tables([Team, RoleSlot, Candidate, ChatMessage, DiscordPairing, GithubProfileCache], safe=True)
         _migrate_candidate_columns()
         _migrate_team_columns()

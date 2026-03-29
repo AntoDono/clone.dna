@@ -1,17 +1,20 @@
 """GitHub API integration for candidate search, profile extraction, and skill inference from bios and repo metadata."""
 
+import json
 import logging
 import os
 import random
+from datetime import datetime, timedelta
 from typing import Optional
 import requests
 
 from .schema import generate_github_description, semantic_analyze_code
-from trainer.github import fetch_repo_code
+from trainer.github import fetch_repo_code, fetch_recent_commits, compute_commit_velocity
 
 logger = logging.getLogger(__name__)
 
 GITHUB_API = "https://api.github.com"
+_CACHE_TTL = timedelta(hours=24)
 
 # ── Search queries per role ───────────────────────────────────────────────────
 
@@ -179,7 +182,7 @@ def search_users_raw(role: str, limit: int = 5) -> list[str]:
     return [user["login"] for user in data.get("items", [])[:limit]]
 
 
-def search_candidates(role: str, limit: int = 5) -> list[dict]:
+def search_candidates(role: str, limit: int = 5, force: bool = False) -> list[dict]:
     """Search GitHub for candidates by role and build full profiles for each handle. Expensive — fetches repos and languages per candidate."""
     query = ROLE_QUERIES.get(role, f"{role} developer in:bio")
     data = _get(
@@ -191,16 +194,19 @@ def search_candidates(role: str, limit: int = 5) -> list[dict]:
 
     profiles = []
     for user in data.get("items", [])[:limit]:
-        profile = build_profile(user["login"], role=role)
+        profile = build_profile(user["login"], role=role, force=force)
         if profile:
             profiles.append(profile)
     return profiles
 
 
-def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
+def build_profile(handle: str, role: Optional[str] = None, force: bool = False) -> Optional[dict]:
     """
     Build a structured candidate profile by combining GitHub metadata with
     Grok-powered semantic analysis of the candidate's actual source code.
+
+    Results are cached in SQLite for 24 hours. Pass force=True to bypass the
+    cache and re-fetch from GitHub (used when the user clicks Refresh).
 
     Two-pass approach:
       1. Keyword baseline — language names, bio patterns, and repo topics produce
@@ -210,6 +216,29 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
          signals, domain expertise, and semantically-grounded skills. Semantic
          results take priority over keyword-derived ones when available.
     """
+    cache_role = role or "swe"
+
+    # ── SQLite cache read ─────────────────────────────────────────────────────
+    if not force:
+        try:
+            from models import GithubProfileCache
+            cutoff = datetime.utcnow() - _CACHE_TTL
+            row = (
+                GithubProfileCache
+                .select()
+                .where(
+                    GithubProfileCache.github_handle == handle,
+                    GithubProfileCache.role == cache_role,
+                    GithubProfileCache.cached_at >= cutoff,
+                )
+                .first()
+            )
+            if row:
+                logger.debug("GitHub profile cache hit: %s (%s)", handle, cache_role)
+                return json.loads(row.profile_json)
+        except Exception as exc:
+            logger.debug("GitHub profile cache read error: %s", exc)
+
     user = _get(f"{GITHUB_API}/users/{handle}")
     if not user or not isinstance(user, dict):
         return None
@@ -272,15 +301,31 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
             if fallback not in baseline_soft and len(baseline_soft) < 6:
                 baseline_soft.append(fallback)
 
-    # ── Pass 2: Semantic enrichment via Grok code analysis ────────────────────
+    # ── Pass 2: Semantic enrichment via Grok code + commit analysis ──────────
     code_samples: list[dict] = []
+    commit_history: list[dict] = []
+    all_commits: list[dict] = []  # flat list for velocity computation
+
     for repo in top_repos[:3]:
+        repo_name = repo["name"]
         try:
-            code = fetch_repo_code(handle, repo["name"])
+            code = fetch_repo_code(handle, repo_name)
             if code:
-                code_samples.append({"repo": repo["name"], "code": code})
+                code_samples.append({"repo": repo_name, "code": code})
         except Exception:
             pass
+        try:
+            commits = fetch_recent_commits(handle, repo_name, limit=25)
+            if commits:
+                commit_history.append({
+                    "repo": repo_name,
+                    "messages": [c["message"] for c in commits],
+                })
+                all_commits.extend(commits)
+        except Exception:
+            pass
+
+    commit_velocity = compute_commit_velocity(all_commits)
 
     semantic = None
     if code_samples:
@@ -289,20 +334,25 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
             "name": user.get("name") or handle,
             "bio": user.get("bio") or "",
         }
-        semantic = semantic_analyze_code(code_samples, candidate_meta, role or "swe")
+        semantic = semantic_analyze_code(
+            code_samples,
+            candidate_meta,
+            role or "swe",
+            commit_history=commit_history or None,
+        )
 
     if semantic:
         # Semantic results take priority; baseline fills gaps
         tech_skills = list(dict.fromkeys(semantic.tech_skills + baseline_tech))[:8]
         soft_skills = list(dict.fromkeys(semantic.soft_skills + baseline_soft))[:8]
-        description = semantic.description
+        description            = semantic.description
         architectural_patterns = semantic.architectural_patterns
         code_quality_signals   = semantic.code_quality_signals
         domain_expertise       = semantic.domain_expertise
+        commit_themes          = semantic.commit_themes
     else:
         tech_skills = baseline_tech
         soft_skills = baseline_soft
-        # Fall back to bio-based Grok description, then template
         profile_so_far = {
             "name": user.get("name") or handle,
             "bio": (user.get("bio") or "")[:200],
@@ -319,6 +369,7 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
         architectural_patterns = []
         code_quality_signals   = []
         domain_expertise       = []
+        commit_themes          = []
 
     # ── Combined skills list (soft first for non-technical roles) ─────────────
     if role in ("pm", "designer"):
@@ -327,7 +378,7 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
         skills = tech_skills + [s for s in soft_skills if s not in tech_skills]
     skills = skills[:10]
 
-    return {
+    profile = {
         "github_handle":        handle,
         "name":                 user.get("name") or handle,
         "avatar_url":           user.get("avatar_url"),
@@ -345,4 +396,22 @@ def build_profile(handle: str, role: Optional[str] = None) -> Optional[dict]:
         "architectural_patterns": architectural_patterns,
         "code_quality_signals":   code_quality_signals,
         "domain_expertise":       domain_expertise,
+        # Commit-derived signals — intent layer from commit history
+        "commit_themes":          commit_themes,
+        "commit_velocity":        commit_velocity,
     }
+
+    # ── SQLite cache write ────────────────────────────────────────────────────
+    try:
+        from models import GithubProfileCache
+        GithubProfileCache.insert(
+            github_handle=handle,
+            role=cache_role,
+            profile_json=json.dumps(profile),
+            cached_at=datetime.utcnow(),
+        ).on_conflict_replace().execute()
+        logger.debug("GitHub profile cached: %s (%s)", handle, cache_role)
+    except Exception as exc:
+        logger.debug("GitHub profile cache write error: %s", exc)
+
+    return profile

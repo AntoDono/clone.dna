@@ -142,3 +142,19 @@ class DiscordPairing(BaseModel):
     discord_user_id = CharField(unique=True)
     team = ForeignKeyField(Team, backref="discord_pairings", on_delete="CASCADE")
     paired_at = DateTimeField(default=datetime.utcnow)
+
+
+class GithubProfileCache(BaseModel):
+    """SQLite-backed cache for built GitHub candidate profiles (24-hour TTL).
+
+    Keyed on (github_handle, role) so that role-specific description and skill
+    ordering are preserved without cross-contaminating cached results.
+    """
+
+    github_handle = CharField(index=True)
+    role          = CharField()
+    profile_json  = TextField()
+    cached_at     = DateTimeField(default=datetime.utcnow)
+
+    class Meta:
+        indexes = ((("github_handle", "role"), True),)  # unique per handle + role

@@ -10,6 +10,17 @@ Clone.dna turns a developer's public GitHub work into a portable, executable LoR
 
 ---
 
+## Production
+
+Both the frontend and backend are live:
+
+| Service | URL |
+|---|---|
+| Frontend | [ycon.antodono.com](https://ycon.antodono.com) |
+| Backend API | [ycon-backend.antodono.com](https://ycon-backend.antodono.com) |
+
+---
+
 ## What It Does
 
 ### The .dna Block — Resume to Weights
@@ -48,7 +59,7 @@ The `grok_cache/` directory contains 11 live candidate profiles from real GitHub
 - **Hot-swappable adapters** — the base model loads once into VRAM; adapters for each role slot are swapped per-request in milliseconds. No restarts, no redeployment.
 - **Zero context overhead** — expertise lives in the weights, not the context window. Every token of context is available for the actual task.
 - **Consent-first architecture** — blocks are minted only from public, MIT/Apache-licensed repos. Every block ships with a `consent.json` and `sources.json`. Developers can revoke at any time.
-- **AI Headhunter** — search GitHub by username or paste a resume/website URL; the extractor builds a structured candidate profile automatically.
+- **AI Headhunter** — search GitHub by username or paste a resume/website URL; the extractor builds a structured candidate profile automatically using a two-pass analysis: keyword baseline (languages, bio) then Grok semantic analysis of both source code blobs and commit history.
 - **PM Orchestration** — send a project prompt to the full team; a PM persona plans, Grok assigns sub-tasks to the right role slots, and each specialist responds in sequence.
 - **Talent Registry** — browse, search, and download minted `.dna` blocks. Every block ships with benchmark scores so hiring teams know what they're getting before loading.
 - **Tool-use agent loop** — clones can emit structured tool calls (`read_file`, `write_file`, `run_command`) executed in a sandboxed workspace, enabling the clone to actually write and run code.
@@ -87,6 +98,12 @@ Pair generation in `trainer/grok.py` is not a generic "generate instruction-resp
 
 The cache at `grok_cache/{handle}.json` means the API is called exactly once per candidate. The 11 profiles in the repo are real, from real GitHub accounts (DanielRosenwasser, davepl, prakhar1989, rcaferati, vakila, and six others). They are not placeholders.
 
+### Commit-History Semantic Analysis — Intent Layer Beyond Code Blobs
+
+`build_profile()` in `extractor/github.py` runs a two-signal semantic pass: code blobs show *how* a developer writes; commit messages show *what* they work on and at what cadence. `fetch_recent_commits()` in `trainer/github.py` fetches the last 25 commit subjects per repo from the GitHub commits API. These are passed alongside code samples to Grok as a structured `--- COMMIT HISTORY ---` block.
+
+`compute_commit_velocity()` derives two temporal metrics from commit timestamps: `commits_per_week` (mean over the sampled window) and `peak_hour_utc` (the most frequent commit hour in UTC, surfacing work-schedule patterns). Grok extracts `commit_themes` — recurring intent patterns in the commit vocabulary ("performance optimization", "API contract changes", "infrastructure hardening") — distinct from `domain_expertise` which comes from code structure. Both fields are returned in the candidate profile and are available to the PM orchestrator when selecting which specialist to assign a sub-task to.
+
 ### Mixed Training — Catastrophic Forgetting is an Active Problem We Solved
 
 Naive fine-tuning on 18–60 candidate-specific pairs would destroy general instruction-following ability. This is not hypothetical — it is the standard failure mode of LoRA fine-tuning on small domain datasets. We address it directly: every training run mixes (1) candidate pairs, (2) `BASE_INSTRUCT_RATIO × n` alpaca-cleaned general instruction examples, and (3) 24 fixed tool-use formatting examples. The ratio is a tunable constant, not a hardcoded magic number. The tool-use examples are preserved separately because losing structured `<tool_call>` formatting would break the agent loop at inference time — a failure mode specific to this system that a generic fine-tuning tutorial would not anticipate.
@@ -100,6 +117,12 @@ The common criticism of heuristic style metrics is that they are not as rigorous
 ### Path-Traversal-Safe Sandboxed Tool Execution
 
 Every file path in `trainer/tools.py` is resolved with `Path.resolve()` before any read, write, or exec. The resolved path is asserted to be a descendant of `AGENT_WORKSPACE_DIR` — if not, the tool call is rejected. Shell commands run via `subprocess` with a configurable timeout and stdout/stderr capture. The workspace listing injected into the PM orchestration prompt is generated from the live directory state at prompt construction time, so the PM knows what files already exist before it starts delegating.
+
+### LoRA Adapter Layer-Drift Measurement — Which Attention Heads Absorbed the Signal
+
+`compute_adapter_layer_drift()` in `trainer/training.py` runs in the narrow window between `model.save_pretrained()` and `model.delete_adapter()` — the only point where the trained lora_A / lora_B tensors are still in memory. It computes the Frobenius norm of every `lora_A` and `lora_B` matrix across all adapted layers and writes a `layer_drift` dict to `eval.json`.
+
+A freshly initialised LoRA adapter has lora_B set to zero (so the initial effective update BA is identically zero) and lora_A drawn from a Kaiming uniform initialiser. After training, ‖lora_B‖_F tells you exactly how much that attention head moved — how much of the candidate's coding style was injected into that specific projection. High drift in `q_proj` / `v_proj` relative to `k_proj` / `o_proj` is the expected pattern for code-domain fine-tuning because query and value projections carry more token-level semantic content. Low drift uniformly across all layers indicates underfitting or too few training pairs. The `summary` sub-dict names the highest and lowest drift layers, enabling per-candidate adapter diagnostics without reloading weights.
 
 ### vLLM Production Compatibility — Verified at Block-Save Time
 

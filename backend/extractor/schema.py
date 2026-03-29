@@ -155,18 +155,22 @@ def generate_github_description(profile: dict, role: str) -> Optional[str]:
 
 
 class SemanticAnalysis(BaseModel):
-    """Structured result of Grok's semantic analysis of a developer's actual source code."""
+    """Structured result of Grok's semantic analysis of a developer's source code and commit history."""
     tech_skills: list[str] = Field(description="Technical skills inferred from code, max 8")
     soft_skills: list[str] = Field(description="Soft skills inferred from code style and patterns, max 6")
     architectural_patterns: list[str] = Field(description="Architectural patterns observed, max 5")
     code_quality_signals: list[str] = Field(description="Code quality indicators observed, max 5")
     domain_expertise: list[str] = Field(description="Problem domains inferred from code, max 5")
-    description: str = Field(description="1-2 sentence role-fit assessment based on code analysis")
+    commit_themes: list[str] = Field(
+        default_factory=list,
+        description="Recurring work themes inferred from commit message vocabulary, max 5",
+    )
+    description: str = Field(description="1-2 sentence role-fit assessment based on code and commit analysis")
 
 
 SEMANTIC_ANALYSIS_SYSTEM = """You are a senior software architect and talent evaluator for Clone.dna.
 
-Perform deep semantic analysis of a developer's actual source code to produce a structured candidate profile.
+Perform deep semantic analysis of a developer's actual source code AND their commit history to produce a structured candidate profile.
 
 Analyze:
 1. **Architectural patterns** — MVC, event-driven, microservices, functional, reactive, CQRS, hexagonal, etc.
@@ -174,17 +178,19 @@ Analyze:
 3. **Technical skills** — specific languages, frameworks, libraries evident in the code (not just file extensions)
 4. **Domain expertise** — the problem domains this developer works in (payments, ML pipelines, compilers, etc.)
 5. **Soft skills inferred** — clean code = attention to detail; good tests = quality mindset; clear docs = communication
+6. **Commit themes** — recurring work themes inferred from commit message vocabulary and patterns. Commit messages reveal *intent* over time: what problems this developer actually solves, at what granularity, and in what vocabulary. Examples: "performance optimization", "API design", "bug triage", "refactoring", "feature delivery". Distinct from domain expertise — this is about *how* they work, not just *what* they work on.
 
-Be specific and factual — base your analysis only on what you observe in the provided code.
+Be specific and factual — base your analysis only on what you observe in the provided code and commit messages.
 
 Respond with a valid JSON object:
 {
   "tech_skills": ["string", ...],            // max 8, specific (e.g. "Redis pub/sub", not "databases")
-  "soft_skills": ["string", ...],            // max 6, inferred from code style
+  "soft_skills": ["string", ...],            // max 6, inferred from code style and commit patterns
   "architectural_patterns": ["string", ...], // max 5
   "code_quality_signals": ["string", ...],   // max 5
   "domain_expertise": ["string", ...],       // max 5
-  "description": "string"                    // 1-2 sentences on role fit
+  "commit_themes": ["string", ...],          // max 5, inferred from commit message vocabulary
+  "description": "string"                    // 1-2 sentences on role fit, referencing both code and commit evidence
 }"""
 
 
@@ -192,12 +198,16 @@ def semantic_analyze_code(
     code_samples: list[dict],
     candidate_meta: dict,
     role: str,
+    commit_history: Optional[list[dict]] = None,
 ) -> Optional["SemanticAnalysis"]:
     """
-    Run Grok semantic analysis on a candidate's actual source code samples.
+    Run Grok semantic analysis on a candidate's source code samples and commit history.
 
-    Extracts architectural patterns, code quality signals, domain expertise,
-    and richer skill inference from real code — not bio keywords or language names.
+    Commit messages are the *intent* layer — they reveal what the developer actually
+    works on over time, at what granularity, and in what domain vocabulary. Code blobs
+    show *how*; commit history shows *what* and *when*. Combining both signals gives
+    Grok a temporal + structural view of the developer's work patterns.
+
     Returns None if Grok is unavailable, call fails, or no code samples provided.
     """
     if not code_samples:
@@ -207,13 +217,25 @@ def semantic_analyze_code(
     except RuntimeError:
         return None
 
-    # Build code block capped at ~9K chars across up to 3 repos
+    # Code block capped at ~9K chars across up to 3 repos
     code_block = ""
     for sample in code_samples[:3]:
         repo = sample.get("repo", "unknown")
         code = sample.get("code", "")[:3000]
         code_block += f"\n\n=== REPO: {repo} ===\n{code}"
     code_block = code_block[:9000]
+
+    # Commit history block: subject lines grouped by repo, capped at ~2K chars
+    commit_block = ""
+    if commit_history:
+        for entry in commit_history:
+            repo = entry.get("repo", "unknown")
+            messages = entry.get("messages", [])
+            if not messages:
+                continue
+            subjects = "\n".join(f"  - {m}" for m in messages[:20])
+            commit_block += f"\n=== COMMITS: {repo} ===\n{subjects}\n"
+        commit_block = commit_block[:2000]
 
     role_context = ROLE_CONTEXT.get(role, "")
     name = candidate_meta.get("name") or candidate_meta.get("github_handle", "")
@@ -226,6 +248,8 @@ def semantic_analyze_code(
         f"{role_context}\n\n"
         f"--- SOURCE CODE SAMPLES ---\n{code_block}"
     )
+    if commit_block:
+        user_message += f"\n\n--- COMMIT HISTORY (subject lines) ---\n{commit_block}"
 
     try:
         response = client.chat.completions.create(
