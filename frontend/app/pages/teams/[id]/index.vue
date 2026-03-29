@@ -107,6 +107,14 @@ const allFilled = computed(() => {
   return team.value.slots.length > 0 && team.value.slots.every(s => s.filled)
 })
 
+const codeCopied = ref(false)
+async function copyPairCode() {
+  if (!team.value?.discord_pair_code) return
+  await navigator.clipboard.writeText(team.value.discord_pair_code)
+  codeCopied.value = true
+  setTimeout(() => { codeCopied.value = false }, 2000)
+}
+
 onMounted(fetchTeam)
 </script>
 
@@ -155,6 +163,17 @@ onMounted(fetchTeam)
       <div class="mb-8">
         <p class="text-xs text-slate-500 uppercase tracking-wide mb-1">Team #{{ team.id }}</p>
         <h1 class="text-2xl font-semibold text-white">{{ team.name }}</h1>
+        <div v-if="team.discord_pair_code" class="mt-2 flex items-center gap-2">
+          <span class="text-xs text-slate-500">Discord pair code:</span>
+          <code class="text-sm font-mono text-indigo-400 bg-slate-800 px-2 py-0.5 rounded select-all">{{ team.discord_pair_code }}</code>
+          <button
+            class="text-xs px-2 py-0.5 rounded transition-colors"
+            :class="codeCopied ? 'text-green-400 bg-green-950' : 'text-slate-500 hover:text-slate-300 bg-slate-800 hover:bg-slate-700'"
+            @click="copyPairCode"
+          >
+            {{ codeCopied ? 'Copied' : 'Copy' }}
+          </button>
+        </div>
       </div>
 
       <!-- Role slots grid -->

@@ -341,7 +341,7 @@ const inputModel = computed({
           {{ activeThread === 'orchestrate' ? 'Build →' : 'Send →' }}
         </button>
       </div>
-      <p class="text-xs text-slate-700 mt-2">Enter to send · Shift+Enter for new line · Left-Shift to toggle <span :class="useGrok ? 'text-orange-500' : 'text-slate-600'">Grok mode</span></p>
+      <p class="text-xs text-slate-700 mt-2">Enter to send · Shift+Enter for new line</p>
     </div>
   </div>
 </template>

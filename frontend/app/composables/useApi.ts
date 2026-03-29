@@ -47,6 +47,7 @@ export interface RoleSlot {
 export interface Team {
   id: number
   name: string
+  discord_pair_code: string | null
   created_at: string
   slots: RoleSlot[]
 }
