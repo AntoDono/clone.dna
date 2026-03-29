@@ -7,3 +7,6 @@ __pycache__
 *.db-shm
 *.db-wal
 dnas/
+gptqmodel_offload/
+agent-workspace/
+quantized_models/

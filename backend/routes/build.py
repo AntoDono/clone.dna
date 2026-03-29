@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import threading
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -9,9 +10,18 @@ from pydantic import BaseModel as PydanticModel
 
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage
-from trainer import stream_chat
+from trainer import agent_chat
+from trainer.tools import TOOL_SCHEMAS
 
 router = APIRouter()
+
+_WORKSPACE_ROOT = Path(os.getenv("AGENT_WORKSPACE_DIR", "agent-workspace"))
+
+
+def _workspace_for_team(team_id: int) -> str:
+    ws = _WORKSPACE_ROOT / str(team_id)
+    ws.mkdir(parents=True, exist_ok=True)
+    return str(ws)
 
 
 class BuildChatRequest(PydanticModel):
@@ -73,6 +83,8 @@ async def build_chat(team_id: int, body: BuildChatRequest):
     if not candidate.dna_cloned:
         raise HTTPException(400, f"DNA not yet cloned for '{body.handle}'")
 
+    workspace = _workspace_for_team(team_id)
+
     with db.atomic():
         ChatMessage.create(
             team=team_id,
@@ -100,13 +112,16 @@ async def build_chat(team_id: int, body: BuildChatRequest):
 
     def run_inference():
         try:
-            text = stream_chat(
+            text = agent_chat(
                 lora_path=candidate.dna_path,
                 adapter_name=body.handle,
                 role=role,
                 profile=profile,
                 history=history,
                 emit=emit,
+                workspace_dir=workspace,
+                tools=TOOL_SCHEMAS,
+                system_prompt=candidate.system_prompt or None,
             )
             full_response.append(text)
         except Exception as e:
@@ -162,6 +177,8 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
     if not cloned:
         raise HTTPException(400, "No cloned candidates found — clone DNA first")
 
+    workspace = _workspace_for_team(team_id)
+
     with db.atomic():
         ChatMessage.create(
             team=team_id, thread="orchestrate", sender="user", content=body.prompt
@@ -193,13 +210,16 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
 
         def run_pm():
             try:
-                text = stream_chat(
+                text = agent_chat(
                     lora_path=lead.dna_path,
                     adapter_name=lead_handle,
                     role=lead.role_slot.role,
                     profile=lead.to_dict(),
                     history=orch_history,
                     emit=make_emit(lead_handle),
+                    workspace_dir=workspace,
+                    tools=TOOL_SCHEMAS,
+                    system_prompt=lead.system_prompt or None,
                 )
                 pm_tokens.append(text)
             except Exception as e:
@@ -277,13 +297,16 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
             def run_spec(s=spec, sh=spec_handle, sr=spec.role_slot.role,
                          hist=[{"sender": "user", "content": task}], toks=spec_tokens):
                 try:
-                    text = stream_chat(
+                    text = agent_chat(
                         lora_path=s.dna_path,
                         adapter_name=sh,
                         role=sr,
                         profile=s.to_dict(),
                         history=hist,
                         emit=make_emit(sh),
+                        workspace_dir=workspace,
+                        tools=TOOL_SCHEMAS,
+                        system_prompt=s.system_prompt or None,
                     )
                     toks.append(text)
                 except Exception as e:
