@@ -84,162 +84,288 @@ function handleKeydown(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950">
+  <div style="min-height:100vh; background:var(--bg);">
 
     <!-- Header -->
-    <header class="bg-slate-900/80 border-b border-slate-800 px-6 py-4 flex items-center justify-between backdrop-blur">
-      <div class="flex items-center gap-4">
-        <NuxtLink to="/" class="text-xl font-bold text-white tracking-tight hover:text-blue-400 transition-colors">Clone.dna</NuxtLink>
-        <span class="text-slate-600">|</span>
-        <span class="text-sm font-medium text-slate-400">Developer Portal</span>
+    <header class="page-header">
+      <div class="dev-header-left">
+        <NuxtLink to="/" class="logo font-display">Clone.dna</NuxtLink>
+        <span class="header-sep">/</span>
+        <span class="header-page">Developer Portal</span>
       </div>
-      <div class="flex items-center gap-3">
-        <NuxtLink to="/registry" class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors">Registry</NuxtLink>
-        <NuxtLink to="/" class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors">Teams</NuxtLink>
-      </div>
+      <nav class="header-right">
+        <NuxtLink to="/registry" class="nav-link">Registry</NuxtLink>
+        <NuxtLink to="/" class="nav-link">Workspace</NuxtLink>
+      </nav>
     </header>
 
-    <main class="max-w-3xl mx-auto px-6 py-12">
+    <main class="dev-main">
 
-      <!-- Hero -->
-      <div class="mb-10">
-        <h1 class="text-3xl font-bold text-white mb-3">Is your code in here?</h1>
-        <p class="text-slate-400 text-base leading-relaxed">
-          Clone.dna mints LoRA adapters from public, permissively-licensed GitHub repositories.
-          Enter your GitHub handle to see if a .dna block has been trained on your work —
-          and revoke it immediately if you'd like.
+      <!-- Page title -->
+      <div class="dev-hero animate-in">
+        <div class="accent-bar" style="margin-bottom:20px;"></div>
+        <h1 class="dev-title font-display">Is your code in here?</h1>
+        <p class="dev-body">
+          Clone.dna trains LoRA adapters exclusively from public, MIT/Apache-2.0 licensed repositories.
+          Enter your GitHub handle to audit whether a .dna block exists for your work —
+          and revoke it instantly if you'd like.
         </p>
       </div>
 
-      <!-- Search -->
-      <div class="flex gap-3 mb-8">
-        <div class="relative flex-1">
-          <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-600 text-sm">@</span>
+      <!-- Search row -->
+      <div class="dev-search animate-in" style="animation-delay:60ms;">
+        <div class="search-handle-wrap">
+          <span class="handle-at font-mono">@</span>
           <input
             v-model="handleInput"
             type="text"
             placeholder="your-github-handle"
-            class="w-full pl-8 pr-4 py-3 bg-slate-900 border border-slate-700 focus:border-blue-500 text-white placeholder-slate-600 text-sm outline-none transition-colors"
+            class="input handle-input"
             @keydown="handleKeydown"
           />
         </div>
         <button
-          class="px-6 py-3 bg-blue-600 hover:bg-blue-500 text-white font-semibold text-sm transition-colors disabled:opacity-40"
+          class="btn btn-primary"
+          style="white-space:nowrap; padding:10px 24px;"
           :disabled="loading || !handleInput.trim()"
           @click="lookup"
         >
-          {{ loading ? 'Searching...' : 'Look Up' }}
+          <span v-if="loading" class="streaming-dot"></span>
+          {{ loading ? 'Searching…' : 'Look Up' }}
         </button>
       </div>
 
-      <!-- Error -->
-      <p v-if="lookupError" class="text-red-400 text-sm mb-6">{{ lookupError }}</p>
+      <!-- Lookup error -->
+      <div v-if="lookupError" class="error-callout" style="margin-bottom:16px;">{{ lookupError }}</div>
 
       <!-- Results -->
-      <div v-if="result">
+      <div v-if="result" class="dev-results animate-in">
 
         <!-- Not found -->
-        <div v-if="!result.blocks.length" class="border border-dashed border-slate-700 bg-slate-900/40 p-12 text-center">
-          <p class="text-2xl mb-3">✓</p>
-          <p class="text-white font-semibold mb-1">No blocks found for @{{ result.handle }}</p>
-          <p class="text-slate-500 text-sm">{{ result.message }}</p>
+        <div v-if="!result.blocks.length" class="state-clean card">
+          <div class="clean-check">✓</div>
+          <p class="clean-title">No blocks found for <span class="font-mono">@{{ result.handle }}</span></p>
+          <p class="clean-body">{{ result.message }}</p>
         </div>
 
         <!-- Found blocks -->
-        <div v-else class="space-y-4">
-          <div class="flex items-center justify-between mb-2">
-            <p class="text-white font-semibold">
-              {{ result.total }} block{{ result.total !== 1 ? 's' : '' }} found for <span class="text-blue-400">@{{ result.handle }}</span>
-            </p>
+        <template v-else>
+          <div class="results-meta">
+            <span class="results-count">
+              <strong>{{ result.total }}</strong> block{{ result.total !== 1 ? 's' : '' }} found for
+              <span class="font-mono" style="color:var(--accent);">@{{ result.handle }}</span>
+            </span>
+            <div v-if="revokeError" class="error-callout" style="font-size:12px; padding:6px 12px;">{{ revokeError }}</div>
           </div>
 
-          <p v-if="revokeError" class="text-red-400 text-sm">{{ revokeError }}</p>
-
-          <div
-            v-for="block in result.blocks"
-            :key="block.team_id"
-            class="border p-5 transition-colors"
-            :class="block.revoked ? 'border-slate-800 bg-slate-900/20 opacity-60' : 'border-slate-700 bg-slate-900/60'"
-          >
-            <div class="flex items-start justify-between mb-4">
-              <div>
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="text-white font-semibold text-sm">{{ block.handle }}-dna</span>
-                  <span class="text-xs border px-1.5 py-0.5"
-                    :class="block.revoked ? 'border-slate-600 text-slate-500' : 'border-green-700 text-green-400'">
-                    v{{ block.version }}
-                  </span>
-                  <span v-if="block.revoked" class="text-xs border border-red-800 text-red-500 px-1.5 py-0.5">REVOKED</span>
+          <div class="blocks-list stagger">
+            <div
+              v-for="block in result.blocks"
+              :key="block.team_id"
+              class="block-row card animate-in"
+              :class="{ 'block-row--revoked': block.revoked }"
+            >
+              <div class="block-row-top">
+                <div class="block-row-left">
+                  <div class="block-row-title">
+                    <span class="font-mono block-handle-name">{{ block.handle }}-dna</span>
+                    <span class="pill" :class="block.revoked ? '' : 'pill-green'">v{{ block.version }}</span>
+                    <span v-if="block.revoked" class="pill" style="border-color:#FECACA; background:#FEF2F2; color:var(--red);">REVOKED</span>
+                  </div>
+                  <p class="block-row-meta">Team {{ block.team_id }} · Minted {{ formatDate(block.created) }}</p>
                 </div>
-                <p class="text-xs text-slate-500">Team {{ block.team_id }} · Minted {{ formatDate(block.created) }}</p>
+                <div>
+                  <button
+                    v-if="!block.revoked && block.revocable"
+                    class="btn btn-danger"
+                    style="font-size:12px;"
+                    :disabled="revoking === block.team_id"
+                    @click="revoke(block)"
+                  >
+                    {{ revoking === block.team_id ? 'Revoking…' : 'Revoke Block' }}
+                  </button>
+                  <span v-else-if="block.revoked" style="font-size:12px; color:var(--text-muted);">
+                    Revoked {{ formatDate(block.revoked_at) }}
+                  </span>
+                </div>
               </div>
-              <button
-                v-if="!block.revoked && block.revocable"
-                class="text-xs border border-red-800 text-red-500 px-3 py-1.5 hover:bg-red-950/60 transition-colors disabled:opacity-40"
-                :disabled="revoking === block.team_id"
-                @click="revoke(block)"
-              >
-                {{ revoking === block.team_id ? 'Revoking...' : 'Revoke Block' }}
-              </button>
-              <span v-else-if="block.revoked" class="text-xs text-slate-600">Revoked {{ formatDate(block.revoked_at) }}</span>
-            </div>
 
-            <!-- Consent details -->
-            <div class="grid grid-cols-2 gap-3 text-xs mb-4">
-              <div>
-                <p class="text-slate-600 mb-0.5">Consent Basis</p>
-                <p class="text-slate-400">{{ block.consent_status === 'implicit_public' ? 'Public repos (MIT/Apache-2.0)' : block.consent_status }}</p>
-              </div>
-              <div>
-                <p class="text-slate-600 mb-0.5">License Verified</p>
-                <p :class="block.consent_verified ? 'text-green-400' : 'text-amber-400'">
-                  {{ block.consent_verified ? '✓ Verified permissive' : '⚠ Pre-verification block' }}
-                </p>
-              </div>
-              <div>
-                <p class="text-slate-600 mb-0.5">Base Model</p>
-                <p class="text-slate-400 font-mono text-[11px] break-all">{{ block.base_model || '—' }}</p>
-              </div>
-              <div>
-                <p class="text-slate-600 mb-0.5">Revocable</p>
-                <p class="text-slate-400">{{ block.revocable ? 'Yes — self-service' : 'Contact team' }}</p>
-              </div>
-            </div>
+              <hr class="divider" />
 
-            <!-- Source repos -->
-            <div v-if="block.source_urls.length">
-              <p class="text-xs text-slate-600 mb-1.5">Trained from</p>
-              <div class="space-y-1">
-                <a
-                  v-for="url in block.source_urls"
-                  :key="url"
-                  :href="url"
-                  target="_blank"
-                  rel="noopener"
-                  class="text-xs text-blue-500 hover:text-blue-400 transition-colors block truncate"
-                >{{ url }}</a>
+              <div class="block-row-details">
+                <div class="detail-cell">
+                  <span class="detail-lbl">Consent Basis</span>
+                  <span class="detail-val">{{ block.consent_status === 'implicit_public' ? 'Public MIT/Apache-2.0' : block.consent_status }}</span>
+                </div>
+                <div class="detail-cell">
+                  <span class="detail-lbl">License</span>
+                  <span class="detail-val" :style="block.consent_verified ? 'color:var(--accent)' : 'color:#92400E'">
+                    {{ block.consent_verified ? '✓ Verified permissive' : '⚠ Pre-verification' }}
+                  </span>
+                </div>
+                <div class="detail-cell">
+                  <span class="detail-lbl">Base Model</span>
+                  <span class="detail-val font-mono" style="font-size:11px; word-break:break-all;">{{ block.base_model || '—' }}</span>
+                </div>
+                <div class="detail-cell">
+                  <span class="detail-lbl">Revocable</span>
+                  <span class="detail-val">{{ block.revocable ? 'Yes — self-service' : 'Contact team' }}</span>
+                </div>
+              </div>
+
+              <div v-if="block.source_urls.length" class="block-sources">
+                <span class="detail-lbl">Trained from</span>
+                <div class="sources-list">
+                  <a
+                    v-for="url in block.source_urls"
+                    :key="url"
+                    :href="url"
+                    target="_blank"
+                    rel="noopener"
+                    class="source-link font-mono"
+                  >{{ url }}</a>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </template>
       </div>
 
-      <!-- Info section (empty state) -->
-      <div v-if="!result && !loading" class="mt-12 border-t border-slate-800 pt-10 grid grid-cols-3 gap-6 text-sm">
-        <div>
-          <p class="text-slate-300 font-semibold mb-1">What gets trained?</p>
-          <p class="text-slate-500 text-xs leading-relaxed">Only public repositories carrying an MIT or Apache-2.0 license. Private repos are never accessed.</p>
-        </div>
-        <div>
-          <p class="text-slate-300 font-semibold mb-1">Can I opt out?</p>
-          <p class="text-slate-500 text-xs leading-relaxed">Yes — revoke any block instantly. It's removed from all registry listings, search, and downloads immediately.</p>
-        </div>
-        <div>
-          <p class="text-slate-300 font-semibold mb-1">What's stored?</p>
-          <p class="text-slate-500 text-xs leading-relaxed">LoRA adapter weights (no raw code) plus a manifest, sources list, and consent record — all auditable.</p>
+      <!-- Info grid (empty state) -->
+      <div v-if="!result && !loading" class="info-grid animate-in" style="animation-delay:120ms;">
+        <hr class="divider" style="margin-bottom:40px;" />
+        <div class="info-cells">
+          <div v-for="item in infoItems" :key="item.title" class="info-cell">
+            <p class="info-title">{{ item.title }}</p>
+            <p class="info-body">{{ item.body }}</p>
+          </div>
         </div>
       </div>
 
     </main>
   </div>
 </template>
+
+<script lang="ts">
+export default {
+  data() {
+    return {
+      infoItems: [
+        { title: 'What gets trained?', body: 'Only public repositories carrying an MIT or Apache-2.0 license. Private repos are never accessed.' },
+        { title: 'Can I opt out?', body: 'Yes — revoke any block instantly. It is removed from all registry listings, search, and downloads immediately.' },
+        { title: 'What\'s stored?', body: 'LoRA adapter weights (no raw code) plus a manifest, sources list, and consent record — all auditable.' },
+      ],
+    }
+  },
+}
+</script>
+
+<style scoped>
+.logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
+.header-sep { color: var(--border-mid); margin: 0 10px; }
+.header-page { font-size: 13px; color: var(--text-muted); }
+.dev-header-left { display: flex; align-items: center; }
+.header-right { display: flex; gap: 4px; align-items: center; }
+
+.dev-main { max-width: 720px; margin: 0 auto; padding: 52px 32px 80px; }
+
+.dev-hero { margin-bottom: 36px; }
+.dev-title { font-size: 36px; font-weight: 400; letter-spacing: -0.03em; color: var(--text-primary); margin-bottom: 14px; line-height: 1.15; }
+.dev-body { font-size: 15px; color: var(--text-secondary); line-height: 1.65; max-width: 560px; }
+
+.dev-search {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+}
+.search-handle-wrap {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.handle-at {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  font-size: 14px;
+  pointer-events: none;
+}
+.handle-input { padding-left: 30px; }
+
+.dev-results { margin-top: 8px; }
+
+.state-clean {
+  padding: 48px 32px;
+  text-align: center;
+}
+.clean-check { font-size: 28px; margin-bottom: 12px; color: var(--accent); }
+.clean-title { font-size: 16px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.clean-body { font-size: 13px; color: var(--text-muted); }
+
+.results-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.results-count { font-size: 14px; color: var(--text-secondary); }
+.results-count strong { color: var(--text-primary); }
+
+.blocks-list { display: flex; flex-direction: column; gap: 12px; }
+
+.block-row {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  transition: opacity 0.2s;
+}
+.block-row--revoked { opacity: 0.55; }
+.block-row-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.block-row-left { display: flex; flex-direction: column; gap: 4px; }
+.block-row-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.block-handle-name { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.block-row-meta { font-size: 12px; color: var(--text-muted); }
+
+.block-row-details { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.detail-cell { display: flex; flex-direction: column; gap: 3px; }
+.detail-lbl { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.detail-val { font-size: 13px; color: var(--text-primary); }
+
+.block-sources { display: flex; flex-direction: column; gap: 6px; }
+.sources-list { display: flex; flex-direction: column; gap: 4px; }
+.source-link {
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+.source-link:hover { text-decoration: underline; }
+
+.info-grid { margin-top: 40px; }
+.info-cells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.info-title { font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 6px; }
+.info-body { font-size: 12px; color: var(--text-muted); line-height: 1.6; }
+
+.error-callout {
+  font-size: 13px;
+  color: var(--red);
+  background: var(--red-light);
+  border: 1px solid #FECACA;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 640px) {
+  .block-row-details { grid-template-columns: 1fr; }
+  .info-cells { grid-template-columns: 1fr; }
+  .dev-search { flex-direction: column; }
+}
+</style>

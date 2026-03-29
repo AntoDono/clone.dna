@@ -38,9 +38,9 @@ const emit = defineEmits<{
 
 const ROLE_BADGE: Record<string, string> = { pm: 'PM', swe: 'SWE', designer: 'Design' }
 const ROLE_COLOR_CLASS: Record<string, string> = {
-  pm: 'border-amber-700 text-amber-400',
-  swe: 'border-blue-700 text-blue-400',
-  designer: 'border-purple-700 text-purple-400',
+  pm: 'border-amber-600 text-amber-800',
+  swe: 'border-blue-600 text-blue-800',
+  designer: 'border-purple-600 text-purple-800',
 }
 
 function threadKey(t: ActiveThread) {
@@ -163,51 +163,51 @@ const inputModel = computed({
 </script>
 
 <template>
-  <div class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
+  <div class="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden bg-[var(--bg)]">
 
     <!-- Thread header -->
-    <div class="flex-shrink-0 px-6 py-3 border-b border-slate-800 flex items-center gap-3">
+    <div class="flex-shrink-0 px-6 py-3 border-b border-[var(--border)] bg-[var(--bg-card)] flex items-center gap-3">
       <template v-if="activeThread === 'orchestrate'">
         <span class="text-lg">⚡</span>
         <div>
-          <p class="text-sm font-semibold text-white">Orchestrate</p>
-          <p class="text-xs text-slate-500">PM coordinates the full team toward your goal</p>
+          <p class="text-sm font-semibold text-[var(--text-primary)]">Orchestrate</p>
+          <p class="text-xs text-[var(--text-muted)]">PM coordinates the full team toward your goal</p>
         </div>
       </template>
       <template v-else-if="activeThread">
         <img
           v-if="(activeThread as CandidateProfile).avatar_url"
           :src="(activeThread as CandidateProfile).avatar_url"
-          class="w-8 h-8 object-cover"
+          class="w-8 h-8 object-cover border border-[var(--border)]"
         />
         <div>
-          <p class="text-sm font-semibold text-white">
+          <p class="text-sm font-semibold text-[var(--text-primary)]">
             {{ (activeThread as CandidateProfile).name || (activeThread as CandidateProfile).github_handle }}
           </p>
-          <p class="text-xs text-slate-500">
+          <p class="text-xs text-[var(--text-muted)]">
             @{{ (activeThread as CandidateProfile).github_handle }}
             · {{ ROLE_BADGE[roleOf((activeThread as CandidateProfile).github_handle)] }}
-            <span v-if="(activeThread as CandidateProfile).dna_cloned" class="text-green-500 ml-1">· DNA loaded</span>
+            <span v-if="(activeThread as CandidateProfile).dna_cloned" class="text-[var(--accent)] ml-1">· DNA loaded</span>
           </p>
         </div>
       </template>
       <template v-else>
-        <p class="text-sm text-slate-500">Select a team member to start chatting</p>
+        <p class="text-sm text-[var(--text-muted)]">Select a team member to start chatting</p>
       </template>
       <div class="ml-auto flex items-center gap-2">
-        <span class="px-2 py-0.5 text-xs border border-slate-700 text-slate-600">LOCAL</span>
+        <span class="px-2 py-0.5 text-xs border border-[var(--border)] text-[var(--text-muted)] bg-[var(--bg-subtle)] rounded">LOCAL</span>
       </div>
     </div>
 
     <!-- Messages -->
     <div class="flex-1 overflow-y-auto px-6 py-4 space-y-4">
       <div v-if="!activeThread" class="h-full flex flex-col items-center justify-center text-center">
-        <p class="text-slate-600 text-sm">Pick a team member from the sidebar to DM them,</p>
-        <p class="text-slate-600 text-sm">or use <span class="text-green-400">Orchestrate</span> to let the PM coordinate the whole team.</p>
+        <p class="text-[var(--text-secondary)] text-sm">Pick a team member from the sidebar to DM them,</p>
+        <p class="text-[var(--text-secondary)] text-sm">or use <span class="text-[var(--accent)] font-medium">Orchestrate</span> to let the PM coordinate the whole team.</p>
       </div>
 
       <div v-else-if="messages.length === 0 && !streaming" class="h-full flex flex-col items-center justify-center text-center">
-        <p class="text-slate-600 text-sm">
+        <p class="text-[var(--text-secondary)] text-sm">
           <template v-if="activeThread === 'orchestrate'">
             Describe what you want to build — the PM will plan and delegate to the team.
           </template>
@@ -226,16 +226,16 @@ const inputModel = computed({
         >
           <!-- Avatar -->
           <div class="flex-shrink-0 mt-0.5">
-            <div v-if="isUserMsg(msg)" class="w-7 h-7 bg-slate-700 border border-slate-600 flex items-center justify-center text-xs font-bold text-slate-300">
+            <div v-if="isUserMsg(msg)" class="w-7 h-7 bg-[var(--bg-subtle)] border border-[var(--border)] flex items-center justify-center text-xs font-bold text-[var(--text-secondary)] rounded">
               U
             </div>
             <template v-else>
               <img
                 v-if="candidateOf(msg.sender)?.avatar_url"
                 :src="candidateOf(msg.sender)!.avatar_url"
-                class="w-7 h-7 object-cover"
+                class="w-7 h-7 object-cover border border-[var(--border)]"
               />
-              <div v-else class="w-7 h-7 bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400">
+              <div v-else class="w-7 h-7 bg-[var(--bg-subtle)] border border-[var(--border)] flex items-center justify-center text-xs font-bold text-[var(--text-muted)] rounded">
                 {{ (candidateOf(msg.sender)?.name ?? msg.sender)[0]?.toUpperCase() }}
               </div>
             </template>
@@ -244,37 +244,37 @@ const inputModel = computed({
           <!-- Bubble -->
           <div class="flex flex-col max-w-[72%]" :class="isUserMsg(msg) ? 'items-end' : 'items-start'">
             <div v-if="!isUserMsg(msg)" class="flex items-center gap-1.5 mb-1">
-              <span class="text-xs font-medium text-slate-400">
+              <span class="text-xs font-medium text-[var(--text-muted)]">
                 {{ candidateOf(msg.sender)?.name || msg.sender }}
               </span>
               <span
-                class="text-xs border px-1 py-px"
-                :class="ROLE_COLOR_CLASS[roleOf(msg.sender)] ?? 'border-slate-700 text-slate-500'"
+                class="text-xs border px-1 py-px rounded bg-[var(--bg-subtle)]"
+                :class="ROLE_COLOR_CLASS[roleOf(msg.sender)] ?? 'border-[var(--border)] text-[var(--text-muted)]'"
               >{{ ROLE_BADGE[roleOf(msg.sender)] ?? msg.sender }}</span>
             </div>
 
             <div
-              class="px-4 py-2.5 text-sm leading-relaxed break-words"
+              class="px-4 py-2.5 text-sm leading-relaxed break-words rounded"
               :class="isUserMsg(msg)
-                ? 'bg-blue-700/40 border border-blue-600/40 text-white whitespace-pre-wrap'
-                : 'bg-slate-900/80 border border-slate-700/60 text-slate-200'"
+                ? 'bg-[var(--accent-light)] border border-[#86EFAC] text-[var(--text-primary)] whitespace-pre-wrap shadow-sm'
+                : 'bg-[var(--bg-card)] border border-[var(--border)] text-[var(--text-primary)] shadow-sm'"
             >
               <template v-if="isUserMsg(msg)">{{ msg.content }}</template>
               <template v-else>
                 <template v-for="(seg, sIdx) in parseMessageContent(msg.content)" :key="sIdx">
                   <div v-if="seg.type === 'text'" class="prose-chat" v-html="renderMarkdown(seg.data as string)"></div>
 
-                  <div v-else-if="seg.type === 'tool_call'" class="my-2 bg-slate-950 border border-slate-700 text-xs font-mono overflow-hidden">
-                    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-slate-800 bg-slate-900/60">
-                      <span class="text-blue-400 font-semibold">{{ TOOL_ICONS[(seg.data as any).name] || (seg.data as any).name }}</span>
-                      <span class="text-slate-500">{{ (seg.data as any).name }}</span>
+                  <div v-else-if="seg.type === 'tool_call'" class="my-2 bg-[var(--bg-subtle)] border border-[var(--border)] text-xs font-mono overflow-hidden rounded">
+                    <div class="flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--bg-card)]">
+                      <span class="text-blue-700 font-semibold">{{ TOOL_ICONS[(seg.data as any).name] || (seg.data as any).name }}</span>
+                      <span class="text-[var(--text-muted)]">{{ (seg.data as any).name }}</span>
                     </div>
-                    <div class="px-3 py-2 text-slate-400 space-y-0.5">
+                    <div class="px-3 py-2 text-[var(--text-secondary)] space-y-0.5">
                       <template v-for="(val, argKey) in (seg.data as any).arguments" :key="argKey">
                         <div class="flex gap-2">
-                          <span class="text-slate-500 shrink-0">{{ argKey }}:</span>
+                          <span class="text-[var(--text-muted)] shrink-0">{{ argKey }}:</span>
                           <span
-                            class="text-slate-300 cursor-pointer"
+                            class="text-[var(--text-primary)] cursor-pointer"
                             @click="toggleExpand(sIdx)"
                           >{{ expandedTools.has(sIdx) ? String(val) : truncate(String(val)) }}</span>
                         </div>
@@ -282,18 +282,18 @@ const inputModel = computed({
                     </div>
                   </div>
 
-                  <div v-else-if="seg.type === 'tool_result'" class="my-2 border text-xs font-mono overflow-hidden"
-                    :class="(seg.data as any).success ? 'bg-slate-950 border-green-800 border-l-2 border-l-green-500' : 'bg-slate-950 border-red-800 border-l-2 border-l-red-500'"
+                  <div v-else-if="seg.type === 'tool_result'" class="my-2 border text-xs font-mono overflow-hidden rounded"
+                    :class="(seg.data as any).success ? 'bg-[var(--bg-subtle)] border-[var(--border)] border-l-2 border-l-[var(--accent)]' : 'bg-[var(--red-light)] border border-[#FECACA] border-l-2 border-l-[var(--red)]'"
                   >
-                    <div class="px-3 py-1.5 border-b border-slate-800 bg-slate-900/60">
-                      <span :class="(seg.data as any).success ? 'text-green-400' : 'text-red-400'">
+                    <div class="px-3 py-1.5 border-b border-[var(--border)] bg-[var(--bg-card)]">
+                      <span :class="(seg.data as any).success ? 'text-[var(--accent-text)]' : 'text-[var(--red)]'">
                         {{ (seg.data as any).success ? 'OK' : 'FAIL' }}
                       </span>
-                      <span class="text-slate-500 ml-2">{{ (seg.data as any).name }}</span>
+                      <span class="text-[var(--text-muted)] ml-2">{{ (seg.data as any).name }}</span>
                     </div>
                     <div
-                      class="px-3 py-2 text-slate-400 whitespace-pre-wrap cursor-pointer"
-                      :class="(seg.data as any).name === 'run_command' ? 'bg-black/40' : ''"
+                      class="px-3 py-2 text-[var(--text-secondary)] whitespace-pre-wrap cursor-pointer"
+                      :class="(seg.data as any).name === 'run_command' ? 'bg-[var(--bg-hover)]' : ''"
                       @click="toggleExpand(sIdx + 10000)"
                     >{{ expandedTools.has(sIdx + 10000) ? (seg.data as any).output : truncate((seg.data as any).output, 200) }}</div>
                   </div>
@@ -302,28 +302,28 @@ const inputModel = computed({
                     v-else-if="seg.type === 'attachment'"
                     :href="(seg.data as any).url"
                     :download="(seg.data as any).name"
-                    class="my-2 flex items-center gap-3 px-4 py-3 bg-slate-900 border border-slate-700 hover:border-blue-600 hover:bg-slate-800/60 transition-colors group no-underline"
+                    class="my-2 flex items-center gap-3 px-4 py-3 bg-[var(--bg-card)] border border-[var(--border)] hover:border-[var(--accent)] hover:bg-[var(--bg-hover)] transition-colors group no-underline rounded shadow-sm"
                   >
                     <span class="text-2xl leading-none select-none">{{ fileIcon((seg.data as any).name) }}</span>
                     <div class="flex-1 min-w-0">
-                      <p class="text-sm font-medium text-slate-200 group-hover:text-blue-300 truncate transition-colors">
+                      <p class="text-sm font-medium text-[var(--text-primary)] group-hover:text-[var(--accent)] truncate transition-colors">
                         {{ (seg.data as any).name }}
                       </p>
-                      <p class="text-xs text-slate-500 mt-0.5">
+                      <p class="text-xs text-[var(--text-muted)] mt-0.5">
                         {{ ((seg.data as any).size / 1024).toFixed(1) }} KB · click to download
                       </p>
                     </div>
-                    <span class="text-slate-600 group-hover:text-blue-400 transition-colors text-xs font-mono shrink-0">↓</span>
+                    <span class="text-[var(--text-muted)] group-hover:text-[var(--accent)] transition-colors text-xs font-mono shrink-0">↓</span>
                   </a>
                 </template>
               </template>
               <span
                 v-if="streaming && streamingHandle && !isUserMsg(msg) && msg === messages[messages.length - 1]"
-                class="inline-block w-1.5 h-3.5 bg-blue-400 animate-pulse ml-0.5 align-text-bottom"
+                class="inline-block w-1.5 h-3.5 bg-[var(--accent)] animate-pulse ml-0.5 align-text-bottom rounded-sm"
               ></span>
             </div>
 
-            <span class="text-xs text-slate-700 mt-1">
+            <span class="text-xs text-[var(--text-muted)] mt-1">
               {{ new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }}
             </span>
           </div>
@@ -335,21 +335,21 @@ const inputModel = computed({
         v-if="streaming && activeThread && streamingHandle === threadKey(activeThread) && (messages.length === 0 || messages.at(-1)?.sender === 'user')"
         class="flex gap-3 items-center"
       >
-        <div class="w-7 h-7 bg-slate-800 border border-slate-700 flex items-center justify-center flex-shrink-0">
+        <div class="w-7 h-7 bg-[var(--bg-subtle)] border border-[var(--border)] flex items-center justify-center flex-shrink-0 rounded">
           <span class="flex gap-0.5">
-            <span class="w-1 h-1 bg-slate-500 rounded-full animate-bounce" style="animation-delay: 0ms"></span>
-            <span class="w-1 h-1 bg-slate-500 rounded-full animate-bounce" style="animation-delay: 100ms"></span>
-            <span class="w-1 h-1 bg-slate-500 rounded-full animate-bounce" style="animation-delay: 200ms"></span>
+            <span class="w-1 h-1 bg-[var(--text-muted)] rounded-full animate-bounce" style="animation-delay: 0ms"></span>
+            <span class="w-1 h-1 bg-[var(--text-muted)] rounded-full animate-bounce" style="animation-delay: 100ms"></span>
+            <span class="w-1 h-1 bg-[var(--text-muted)] rounded-full animate-bounce" style="animation-delay: 200ms"></span>
           </span>
         </div>
-        <span v-if="isThinking" class="text-xs text-slate-500 animate-pulse tracking-wide">Thinking…</span>
+        <span v-if="isThinking" class="text-xs text-[var(--text-muted)] animate-pulse tracking-wide">Thinking…</span>
       </div>
 
       <div :ref="(el) => $emit('update:chatEndRef', el)"></div>
     </div>
 
     <!-- Input -->
-    <div class="flex-shrink-0 border-t border-slate-800 bg-slate-900/40 p-4">
+    <div class="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg-card)] p-4 shadow-[0_-4px_12px_rgba(28,24,17,0.04)]">
       <div class="flex gap-3 items-end">
         <textarea
           v-model="inputModel"
@@ -360,39 +360,42 @@ const inputModel = computed({
               : 'Select a team member first'"
           :disabled="!activeThread || streaming || (activeThread !== 'orchestrate' && !(activeThread as CandidateProfile).dna_cloned)"
           rows="2"
-          class="flex-1 bg-slate-900 border border-slate-700 text-slate-200 text-sm px-4 py-3 resize-none focus:outline-none focus:border-blue-600 transition-colors placeholder-slate-600 disabled:opacity-40"
+          class="input flex-1 text-sm px-4 py-3 resize-none disabled:opacity-40"
           @keydown="emit('keydown', $event)"
         ></textarea>
         <button
           v-if="streaming"
-          class="px-5 py-3 text-sm font-semibold border border-red-600 text-red-400 hover:bg-red-950/40 transition-colors"
+          type="button"
+          class="px-5 py-3 text-sm font-semibold border border-[var(--red)] text-[var(--red)] hover:bg-[var(--red-light)] transition-colors rounded"
           @click="emit('stop')"
         >
           Stop ■
         </button>
         <button
           v-else
+          type="button"
           :disabled="!inputText.trim() || !activeThread"
-          class="px-5 py-3 text-sm font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+          class="px-5 py-3 text-sm font-semibold border transition-colors disabled:opacity-30 disabled:cursor-not-allowed rounded"
           :class="activeThread === 'orchestrate'
-            ? 'border-green-600 text-green-400 hover:bg-green-950/40'
-            : 'border-blue-600 text-blue-400 hover:bg-blue-950/40'"
+            ? 'border-[var(--accent)] text-[var(--accent-text)] hover:bg-[var(--accent-light)]'
+            : 'border-blue-600 text-blue-800 hover:bg-blue-50'"
           @click="emit('send')"
         >
           {{ activeThread === 'orchestrate' ? 'Build →' : 'Send →' }}
         </button>
       </div>
       <div class="flex items-center justify-between mt-2">
-        <p class="text-xs text-slate-700">Enter to send · Shift+Enter for new line · Left Shift toggles Grok</p>
+        <p class="text-xs text-[var(--text-muted)]">Enter to send · Shift+Enter for new line · Left Shift toggles boost mode</p>
         <button
+          type="button"
           class="flex items-center gap-1.5 text-xs transition-colors select-none"
-          :class="useGrok ? 'text-orange-400 hover:text-orange-300' : 'text-slate-500 hover:text-slate-300'"
-          title="Toggle Grok mode (or press Left Shift)"
+          :class="useGrok ? 'text-amber-700 hover:text-amber-900' : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'"
+          title="Toggle boost mode (or press Left Shift)"
           @click="emit('toggle-grok')"
         >
           <span
             class="w-2 h-2 rounded-full flex-shrink-0 transition-colors duration-200"
-            :class="useGrok ? 'bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.7)]' : 'bg-green-500 shadow-[0_0_6px_rgba(34,197,94,0.5)]'"
+            :class="useGrok ? 'bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.5)]' : 'bg-[var(--accent)] shadow-[0_0_6px_rgba(22,101,52,0.35)]'"
           ></span>
           {{ useGrok ? 'Local Boost' : 'Local' }}
         </button>
@@ -424,7 +427,7 @@ const inputModel = computed({
 .prose-chat :deep(h2),
 .prose-chat :deep(h3),
 .prose-chat :deep(h4) {
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 600;
   margin: 0.6em 0 0.3em;
 }
@@ -432,32 +435,32 @@ const inputModel = computed({
 .prose-chat :deep(h2) { font-size: 1.1em; }
 .prose-chat :deep(h3) { font-size: 1.05em; }
 .prose-chat :deep(strong) {
-  color: #e2e8f0;
+  color: var(--text-primary);
   font-weight: 600;
 }
 .prose-chat :deep(em) {
   font-style: italic;
 }
 .prose-chat :deep(a) {
-  color: #60a5fa;
+  color: #1d4ed8;
   text-decoration: underline;
   text-underline-offset: 2px;
 }
 .prose-chat :deep(a:hover) {
-  color: #93bbfd;
+  color: #2563eb;
 }
 .prose-chat :deep(code) {
-  background: rgba(0, 0, 0, 0.35);
-  border: 1px solid rgba(100, 116, 139, 0.3);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   padding: 0.15em 0.35em;
   border-radius: 3px;
   font-size: 0.88em;
-  font-family: ui-monospace, 'Cascadia Code', 'Source Code Pro', Menlo, monospace;
-  color: #93c5fd;
+  font-family: var(--font-mono);
+  color: var(--accent-text);
 }
 .prose-chat :deep(pre) {
-  background: rgba(0, 0, 0, 0.45);
-  border: 1px solid rgba(100, 116, 139, 0.3);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
   padding: 0.75em 1em;
   margin: 0.5em 0;
   overflow-x: auto;
@@ -467,7 +470,7 @@ const inputModel = computed({
   background: none;
   border: none;
   padding: 0;
-  color: #cbd5e1;
+  color: var(--text-primary);
 }
 .prose-chat :deep(ul),
 .prose-chat :deep(ol) {
@@ -487,14 +490,14 @@ const inputModel = computed({
   margin: 0;
 }
 .prose-chat :deep(blockquote) {
-  border-left: 3px solid #475569;
+  border-left: 3px solid var(--border-mid);
   padding-left: 0.75em;
   margin: 0.4em 0;
-  color: #94a3b8;
+  color: var(--text-secondary);
 }
 .prose-chat :deep(hr) {
   border: none;
-  border-top: 1px solid rgba(100, 116, 139, 0.3);
+  border-top: 1px solid var(--border);
   margin: 0.6em 0;
 }
 .prose-chat :deep(table) {
@@ -505,13 +508,13 @@ const inputModel = computed({
 }
 .prose-chat :deep(th),
 .prose-chat :deep(td) {
-  border: 1px solid rgba(100, 116, 139, 0.3);
+  border: 1px solid var(--border);
   padding: 0.35em 0.6em;
   text-align: left;
 }
 .prose-chat :deep(th) {
-  background: rgba(0, 0, 0, 0.25);
-  color: #e2e8f0;
+  background: var(--bg-subtle);
+  color: var(--text-primary);
   font-weight: 600;
 }
 </style>

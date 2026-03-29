@@ -97,174 +97,162 @@ onMounted(fetchBlocks)
 </script>
 
 <template>
-  <div class="min-h-screen bg-slate-950">
+  <div style="min-height:100vh; background:var(--bg);">
 
     <!-- Header -->
-    <header class="bg-slate-900/80 border-b border-slate-800 px-6 py-4 flex items-center justify-between backdrop-blur">
-      <div class="flex items-center gap-4">
-        <NuxtLink to="/" class="text-xl font-bold text-white tracking-tight hover:text-blue-400 transition-colors">
-          Clone.dna
-        </NuxtLink>
-        <span class="text-slate-600">|</span>
-        <span class="text-sm font-medium text-slate-400">Talent Registry</span>
+    <header class="page-header">
+      <div class="header-left">
+        <NuxtLink to="/" class="logo font-display">Clone.dna</NuxtLink>
+        <span class="header-sep">/</span>
+        <span class="header-page">Talent Registry</span>
       </div>
-      <div class="flex items-center gap-2">
-        <NuxtLink
-          to="/developer"
-          class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
-        >
-          Developer Portal
-        </NuxtLink>
-        <NuxtLink
-          to="/"
-          class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
-        >
-          Teams
-        </NuxtLink>
-      </div>
+      <nav class="header-right">
+        <NuxtLink to="/developer" class="nav-link">Developer Portal</NuxtLink>
+        <NuxtLink to="/" class="nav-link">Workspace</NuxtLink>
+      </nav>
     </header>
 
     <!-- Main -->
-    <main class="max-w-5xl mx-auto px-6 py-10">
-      <div class="mb-8">
-        <h1 class="text-2xl font-semibold text-white">DNA Registry</h1>
-        <p class="text-slate-500 text-sm mt-1">Browse, search, and download minted .dna blocks</p>
-      </div>
+    <main class="reg-main">
 
-      <!-- Search -->
-      <div class="mb-6">
-        <input
-          v-model="search"
-          type="text"
-          placeholder="Search by handle, skill, or domain..."
-          class="w-full max-w-md border border-slate-700 focus:border-blue-500 bg-slate-900 text-white placeholder-slate-600 px-4 py-2.5 text-sm outline-none transition-colors"
-        />
-      </div>
-
-      <!-- Revoke error -->
-      <Transition name="fade-btn">
-        <div v-if="revokeError" class="mb-4 border border-red-700 bg-red-950/40 text-red-400 text-sm px-4 py-2">
-          {{ revokeError }}
+      <!-- Page title + search row -->
+      <div class="reg-top">
+        <div>
+          <h1 class="reg-title font-display">DNA Registry</h1>
+          <p class="reg-subtitle">Browse, download, and manage minted .dna blocks</p>
         </div>
-      </Transition>
+        <div class="reg-search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 16 16" fill="none">
+            <circle cx="6.5" cy="6.5" r="5" stroke="currentColor" stroke-width="1.5"/>
+            <path d="M10.5 10.5L14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          </svg>
+          <input
+            v-model="search"
+            type="text"
+            placeholder="Search by handle, skill, or domain…"
+            class="reg-search"
+          />
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div v-if="revokeError" class="error-callout" style="margin-bottom:16px;">{{ revokeError }}</div>
 
       <!-- Loading -->
-      <p v-if="loading" class="text-slate-500 text-sm">Loading registry...</p>
+      <div v-if="loading" class="state-row">
+        <span class="streaming-dot"></span>
+        <span style="color:var(--text-muted); font-size:14px;">Loading registry…</span>
+      </div>
 
       <!-- Empty -->
-      <div v-else-if="!blocks.length" class="border border-dashed border-slate-700 bg-slate-900/40 p-16 text-center">
-        <p class="text-slate-500">No .dna blocks minted yet.</p>
-        <p class="text-slate-600 text-sm mt-2">Clone a team's DNA to populate the registry.</p>
+      <div v-else-if="!blocks.length" class="state-empty">
+        <p class="empty-title">Registry is empty</p>
+        <p class="empty-sub">Clone a team's DNA to populate the registry.</p>
       </div>
 
       <!-- No results -->
-      <p v-else-if="!filtered.length" class="text-slate-500 text-sm">
+      <p v-else-if="!filtered.length" style="color:var(--text-muted); font-size:14px;">
         No blocks match "{{ search }}"
       </p>
 
       <!-- Grid -->
-      <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div v-else class="reg-grid stagger">
         <div
           v-for="block in filtered"
           :key="`${block.team_id}-${block.handle}`"
-          class="bg-slate-900/60 border border-slate-800 hover:border-slate-600 transition-colors p-5 cursor-pointer"
+          class="block-card card animate-in"
+          :class="{ 'block-card--open': selectedBlock?.handle === block.handle }"
           @click="selectedBlock = selectedBlock?.handle === block.handle ? null : block"
         >
-          <div class="flex items-start justify-between mb-3">
-            <div>
-              <p class="font-semibold text-white">{{ block.handle }}</p>
-              <p class="text-xs text-slate-500 mt-0.5">{{ block.name }}</p>
+          <!-- Card top -->
+          <div class="block-header">
+            <div class="block-identity">
+              <span class="block-handle font-mono">@{{ block.handle }}</span>
+              <span class="block-name">{{ block.name }}</span>
             </div>
-            <span class="text-xs font-medium border border-green-600 text-green-400 bg-green-950/50 px-2 py-0.5">
-              v{{ block.version || '1.0.0' }}
-            </span>
+            <span class="pill pill-green">v{{ block.version || '1.0.0' }}</span>
           </div>
 
           <!-- Domains -->
-          <div class="flex flex-wrap gap-1.5 mb-3">
+          <div v-if="block.expertise_domains.length" class="block-domains">
             <span
-              v-for="domain in block.expertise_domains.slice(0, 5)"
+              v-for="domain in block.expertise_domains.slice(0, 4)"
               :key="domain"
-              class="text-xs px-2 py-0.5 border border-slate-700 text-slate-400"
-            >
-              {{ domain }}
-            </span>
+              class="pill"
+            >{{ domain }}</span>
           </div>
 
-          <!-- Scores row -->
-          <div class="grid grid-cols-4 gap-3 text-xs mb-3">
-            <div>
-              <p class="text-slate-600 mb-0.5">Style</p>
-              <p class="text-slate-300 font-medium">{{ formatScore(block.eval_summary.style_consistency) }}</p>
+          <!-- Metrics row -->
+          <div class="block-metrics">
+            <div class="metric">
+              <span class="metric-label">Style</span>
+              <span class="metric-value">{{ formatScore(block.eval_summary.style_consistency) }}</span>
             </div>
-            <div>
-              <p class="text-slate-600 mb-0.5">Domain</p>
-              <p class="text-slate-300 font-medium">{{ formatScore(block.eval_summary.domain_accuracy) }}</p>
+            <div class="metric">
+              <span class="metric-label">Domain</span>
+              <span class="metric-value">{{ formatScore(block.eval_summary.domain_accuracy) }}</span>
             </div>
-            <div>
-              <p class="text-slate-600 mb-0.5">PPL Δ</p>
-              <p class="font-medium" :class="block.eval_summary.perplexity_reduction_ratio && block.eval_summary.perplexity_reduction_ratio > 1 ? 'text-green-400' : 'text-slate-500'">
+            <div class="metric">
+              <span class="metric-label">PPL ×</span>
+              <span
+                class="metric-value"
+                :style="block.eval_summary.perplexity_reduction_ratio && block.eval_summary.perplexity_reduction_ratio > 1 ? 'color:var(--accent)' : ''"
+              >
                 {{ block.eval_summary.perplexity_reduction_ratio ? `×${block.eval_summary.perplexity_reduction_ratio.toFixed(2)}` : '—' }}
-              </p>
+              </span>
             </div>
-            <div>
-              <p class="text-slate-600 mb-0.5">Loss</p>
-              <p class="text-slate-300 font-medium">{{ formatLoss(block.eval_summary.best_loss || block.eval_summary.final_loss) }}</p>
+            <div class="metric">
+              <span class="metric-label">Loss</span>
+              <span class="metric-value">{{ formatLoss(block.eval_summary.best_loss || block.eval_summary.final_loss) }}</span>
             </div>
           </div>
 
-          <!-- Meta row -->
-          <div class="flex items-center justify-between text-xs text-slate-600">
-            <span>{{ block.training_pairs || '—' }} pairs</span>
-            <span>{{ formatDate(block.created) }}</span>
+          <!-- Footer -->
+          <div class="block-footer">
+            <span class="block-pairs font-mono">{{ block.training_pairs || '—' }} pairs</span>
+            <span class="block-date">{{ formatDate(block.created) }}</span>
           </div>
 
           <!-- Expanded detail -->
           <Transition name="expand">
-            <div v-if="selectedBlock?.handle === block.handle" class="mt-4 pt-4 border-t border-slate-800">
-              <div class="grid grid-cols-2 gap-3 text-xs mb-4">
-                <div>
-                  <p class="text-slate-600 mb-0.5">Base Model</p>
-                  <p class="text-slate-400 font-mono text-[11px] break-all">{{ block.base_model }}</p>
+            <div v-if="selectedBlock?.handle === block.handle" class="block-detail" @click.stop>
+              <hr class="divider" style="margin-bottom:16px;" />
+              <div class="detail-grid">
+                <div class="detail-row">
+                  <span class="detail-label">Base Model</span>
+                  <span class="detail-val font-mono" style="font-size:11px; word-break:break-all;">{{ block.base_model }}</span>
                 </div>
-                <div>
-                  <p class="text-slate-600 mb-0.5">Latency Overhead</p>
-                  <p class="text-slate-300">{{ block.eval_summary.latency_overhead_ms ? block.eval_summary.latency_overhead_ms + 'ms' : '—' }}</p>
+                <div class="detail-row">
+                  <span class="detail-label">Latency</span>
+                  <span class="detail-val">{{ block.eval_summary.latency_overhead_ms ? block.eval_summary.latency_overhead_ms + ' ms' : '—' }}</span>
                 </div>
-                <div>
-                  <p class="text-slate-600 mb-0.5">Teacher</p>
-                  <p class="text-slate-300">{{ block.eval_summary.teacher_model || '—' }}</p>
+                <div class="detail-row">
+                  <span class="detail-label">Teacher</span>
+                  <span class="detail-val">{{ block.eval_summary.teacher_model || '—' }}</span>
                 </div>
-                <div>
-                  <p class="text-slate-600 mb-0.5">vLLM</p>
-                  <p class="text-slate-300">{{ block.vllm_compatible ? 'Compatible' : 'No' }}</p>
+                <div class="detail-row">
+                  <span class="detail-label">vLLM</span>
+                  <span class="detail-val" :style="block.vllm_compatible ? 'color:var(--accent)' : ''">
+                    {{ block.vllm_compatible ? '✓ Compatible' : 'No' }}
+                  </span>
                 </div>
               </div>
 
-              <!-- Tags -->
-              <div v-if="block.tags.length" class="flex flex-wrap gap-1.5 mb-4">
-                <span
-                  v-for="tag in block.tags"
-                  :key="tag"
-                  class="text-xs px-1.5 py-0.5 bg-slate-800 text-slate-500"
-                >
-                  {{ tag }}
-                </span>
+              <div v-if="block.tags.length" class="block-tags">
+                <span v-for="tag in block.tags" :key="tag" class="pill font-mono">{{ tag }}</span>
               </div>
 
-              <div class="flex items-center gap-3">
-                <a
-                  :href="downloadUrl(block)"
-                  class="inline-block border border-blue-500 text-blue-400 font-medium px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-colors"
-                >
-                  Download .dna
+              <div class="block-actions">
+                <a :href="downloadUrl(block)" class="btn btn-primary" style="font-size:13px;" @click.stop>
+                  ↓ Download .dna
                 </a>
                 <button
-                  class="border border-red-800 text-red-500 font-medium px-3 py-1.5 text-sm hover:bg-red-950/60 transition-colors disabled:opacity-40"
+                  class="btn btn-danger"
+                  style="font-size:13px;"
                   :disabled="revoking === block.handle"
                   @click.stop="revokeBlock(block)"
                 >
-                  {{ revoking === block.handle ? 'Revoking...' : 'Revoke' }}
+                  {{ revoking === block.handle ? 'Revoking…' : 'Revoke Block' }}
                 </button>
               </div>
             </div>
@@ -272,16 +260,153 @@ onMounted(fetchBlocks)
         </div>
       </div>
 
-      <!-- Total -->
-      <p v-if="blocks.length" class="text-xs text-slate-600 mt-6">
-        {{ filtered.length }} of {{ blocks.length }} block{{ blocks.length === 1 ? '' : 's' }}
+      <!-- Count -->
+      <p v-if="blocks.length && !loading" class="reg-count font-mono">
+        {{ filtered.length }} / {{ blocks.length }} blocks
       </p>
     </main>
   </div>
 </template>
 
 <style scoped>
-.expand-enter-active, .expand-leave-active { transition: all 0.2s ease; }
-.expand-enter-from, .expand-leave-to { opacity: 0; max-height: 0; overflow: hidden; }
-.expand-enter-to, .expand-leave-from { opacity: 1; max-height: 500px; }
+/* Header */
+.logo { font-size: 18px; font-weight: 400; color: var(--text-primary); letter-spacing: -0.02em; text-decoration: none; }
+.header-sep { color: var(--border-mid); margin: 0 10px; }
+.header-page { font-size: 13px; color: var(--text-muted); }
+.header-left { display: flex; align-items: center; }
+.header-right { display: flex; gap: 4px; align-items: center; }
+
+/* Page layout */
+.reg-main { max-width: 960px; margin: 0 auto; padding: 40px 32px 80px; }
+.reg-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.reg-title { font-size: 30px; font-weight: 400; letter-spacing: -0.02em; color: var(--text-primary); }
+.reg-subtitle { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+.reg-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-icon {
+  position: absolute;
+  left: 12px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.reg-search {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  padding: 9px 14px 9px 34px;
+  width: 280px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.reg-search::placeholder { color: var(--text-muted); }
+.reg-search:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(22,101,52,0.08);
+}
+
+/* States */
+.state-row { display: flex; align-items: center; gap: 10px; padding: 32px 0; }
+.state-empty {
+  border: 1px dashed var(--border);
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 64px 32px;
+  text-align: center;
+}
+.empty-title { font-size: 15px; font-weight: 600; color: var(--text-primary); margin-bottom: 4px; }
+.empty-sub { font-size: 13px; color: var(--text-muted); }
+
+/* Grid */
+.reg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 14px;
+}
+.reg-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 20px;
+  letter-spacing: 0.04em;
+}
+
+/* Block card */
+.block-card {
+  padding: 20px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.block-card:hover { transform: translateY(-1px); }
+.block-card--open { border-color: var(--accent) !important; }
+
+.block-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.block-identity { display: flex; flex-direction: column; gap: 2px; }
+.block-handle { font-size: 14px; font-weight: 500; color: var(--text-primary); }
+.block-name { font-size: 12px; color: var(--text-muted); }
+
+.block-domains { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.block-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+.metric { display: flex; flex-direction: column; gap: 3px; }
+.metric-label { font-size: 10px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; }
+.metric-value { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+
+.block-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.block-pairs { font-size: 11px; color: var(--text-muted); }
+.block-date { font-size: 12px; color: var(--text-muted); }
+
+/* Expanded detail */
+.block-detail { display: flex; flex-direction: column; gap: 12px; }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.detail-row { display: flex; flex-direction: column; gap: 3px; }
+.detail-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); }
+.detail-val { font-size: 13px; color: var(--text-primary); }
+.block-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.block-actions { display: flex; gap: 10px; padding-top: 4px; flex-wrap: wrap; }
+
+/* Error */
+.error-callout {
+  font-size: 13px;
+  color: var(--red);
+  background: var(--red-light);
+  border: 1px solid #FECACA;
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+
+/* Expand transition */
+.expand-enter-active, .expand-leave-active { transition: all 0.2s ease; overflow: hidden; }
+.expand-enter-from, .expand-leave-to { opacity: 0; max-height: 0; }
+.expand-enter-to, .expand-leave-from { opacity: 1; max-height: 600px; }
 </style>
