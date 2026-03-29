@@ -170,6 +170,93 @@ def load_adapter(lora_path: str, adapter_name: str) -> None:
         _adapters_loaded.add(adapter_name)
 
 
+def load_blended_adapter(
+    primary_path: str,
+    primary_name: str,
+    secondary_path: str,
+    secondary_name: str,
+    primary_weight: float = 0.7,
+) -> str:
+    """Create a transient LoRA adapter by linearly interpolating two adapters in weight space.
+
+    Uses PEFT's add_weighted_adapter(combination_type="linear") to produce a merged
+    adapter whose lora_A / lora_B matrices are weighted sums of the source matrices:
+
+        delta_W_merged = primary_weight * (B_p @ A_p) + (1 - primary_weight) * (B_s @ A_s)
+
+    The primary adapter (specialist) dominates; the secondary (PM) contributes its
+    framing at (1 - primary_weight). The result is a single adapter — the PM's
+    architectural vocabulary is encoded in the weights, not injected as tokens.
+
+    Both source adapters are evicted after merging; only the blended adapter remains.
+    Falls back to primary-only loading if either source has no weights or if PEFT
+    rejects the merge (e.g. incompatible target modules between the two adapters).
+
+    Returns the merged adapter name (or primary_name on fallback).
+    """
+    primary_dir = Path(primary_path)
+    secondary_dir = Path(secondary_path)
+    primary_has_weights = primary_dir.is_dir() and any(primary_dir.glob("adapter_model*"))
+    secondary_has_weights = secondary_dir.is_dir() and any(secondary_dir.glob("adapter_model*"))
+
+    if not primary_has_weights or not secondary_has_weights or primary_name == secondary_name:
+        load_adapter(primary_path, primary_name)
+        return primary_name
+
+    model, _ = ensure_base_model()
+    merged_name = f"blend_{primary_name}_x_{secondary_name}"
+
+    with _cache_lock:
+        # The merged adapter is a specialisation of (primary, secondary) — serve cached.
+        if merged_name in _adapters_loaded:
+            model.set_adapter(merged_name)
+            return merged_name
+        for old in list(_adapters_loaded):
+            if old == _NO_ADAPTER:
+                continue
+            try:
+                model.delete_adapter(old)
+            except Exception:
+                pass
+        _adapters_loaded.clear()
+
+    try:
+        model.load_adapter(primary_path, adapter_name=primary_name)
+        model.load_adapter(secondary_path, adapter_name=secondary_name)
+        model.add_weighted_adapter(
+            adapters=[primary_name, secondary_name],
+            weights=[primary_weight, 1.0 - primary_weight],
+            adapter_name=merged_name,
+            combination_type="linear",
+        )
+        # Evict source adapters — keep only the merged one resident
+        for src in [primary_name, secondary_name]:
+            try:
+                model.delete_adapter(src)
+            except Exception:
+                pass
+        model.set_adapter(merged_name)
+        with _cache_lock:
+            _adapters_loaded.add(merged_name)
+        logger.info(
+            "Inference: blended adapter '%s' (%.0f%% primary, %.0f%% secondary)",
+            merged_name, primary_weight * 100, (1 - primary_weight) * 100,
+        )
+        return merged_name
+    except Exception as e:
+        logger.warning("Inference: adapter blend failed (%s) — falling back to primary", e)
+        # Clean up any partial state before falling back
+        for name in [primary_name, secondary_name, merged_name]:
+            try:
+                model.delete_adapter(name)
+            except Exception:
+                pass
+        with _cache_lock:
+            _adapters_loaded.clear()
+        load_adapter(primary_path, primary_name)
+        return primary_name
+
+
 def warmup_model() -> None:
     """Pre-load the base model into the inference cache at server startup."""
     base_model = os.getenv("BASE_MODEL", "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4")
@@ -555,18 +642,37 @@ def agent_chat(
     tools: list[dict] | None = None,
     max_new_tokens: int = 2048,
     system_prompt: str | None = None,
+    blend_lora_path: str | None = None,
+    blend_adapter_name: str | None = None,
+    blend_weight: float = 0.7,
 ) -> str:
     """
     Agentic chat with tool use.  Generates a response, detects <tool_call>
     blocks, executes them in the sandboxed workspace, feeds results back,
     and regenerates — up to MAX_TOOL_ITERATIONS times.
 
+    When blend_lora_path and blend_adapter_name are provided, the specialist's
+    adapter is linearly interpolated with the secondary adapter (typically the PM's)
+    before generation. The specialist dominates at blend_weight (default 0.7) and
+    the secondary contributes at (1 - blend_weight). Merging happens in weight space
+    via load_blended_adapter() — not via a system prompt injection.
+
     Returns the concatenated visible text across all iterations.
     """
     from .tools import execute_tool
 
     model, tokenizer = ensure_base_model()
-    load_adapter(lora_path, adapter_name)
+    if blend_lora_path and blend_adapter_name and blend_adapter_name != adapter_name:
+        active_adapter = load_blended_adapter(
+            primary_path=lora_path,
+            primary_name=adapter_name,
+            secondary_path=blend_lora_path,
+            secondary_name=blend_adapter_name,
+            primary_weight=blend_weight,
+        )
+    else:
+        load_adapter(lora_path, adapter_name)
+        active_adapter = adapter_name
 
     if not system_prompt:
         name = profile.get("name") or adapter_name
@@ -578,7 +684,7 @@ def agent_chat(
     for iteration in range(MAX_TOOL_ITERATIONS):
         prompt = _format_prompt(tokenizer, messages, tools=tools)
         visible, raw, tool_calls = _generate_once(
-            model, tokenizer, adapter_name, prompt, emit, max_new_tokens,
+            model, tokenizer, active_adapter, prompt, emit, max_new_tokens,
         )
         full_visible += visible
 

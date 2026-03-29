@@ -118,6 +118,18 @@ The common criticism of heuristic style metrics is that they are not as rigorous
 
 Every file path in `trainer/tools.py` is resolved with `Path.resolve()` before any read, write, or exec. The resolved path is asserted to be a descendant of `AGENT_WORKSPACE_DIR` — if not, the tool call is rejected. Shell commands run via `subprocess` with a configurable timeout and stdout/stderr capture. The workspace listing injected into the PM orchestration prompt is generated from the live directory state at prompt construction time, so the PM knows what files already exist before it starts delegating.
 
+### PM-Specialist Adapter Blending — Weight-Space Framing, Not Token Injection
+
+During PM orchestration, each specialist's response is generated through a *blended* adapter created by `load_blended_adapter()` in `trainer/inference.py`. When Grok assigns a task to a specialist, `agent_chat()` calls `load_blended_adapter(primary=specialist@0.7, secondary=pm@0.3)` instead of a plain `load_adapter()`. PEFT's `add_weighted_adapter(combination_type="linear")` produces a merged adapter whose delta_W matrices are:
+
+```
+delta_W_merged = 0.7 × (B_spec @ A_spec) + 0.3 × (B_pm @ A_pm)
+```
+
+Both source adapters are loaded into memory, merged, and then evicted — only the blended adapter stays resident. The PM's architectural vocabulary and planning style are now encoded in the specialist's active weight matrices, not in a system prompt. The specialist still dominates at 0.7 so their domain expertise is preserved; the PM contributes 0.3 so the specialist's output naturally aligns with the plan without needing it re-stated as tokens.
+
+The implementation handles three failure modes explicitly: (1) primary or secondary adapter missing weights — falls back to primary-only; (2) same adapter used as both primary and secondary (PM is also the only specialist) — skips the merge; (3) PEFT rejects the merge due to incompatible target modules — catches the exception, cleans up partial state, and falls back to primary-only. The blended adapter is cached under the key `blend_{specialist}_x_{pm}` and served from the cache on subsequent calls within the same orchestration session.
+
 ### LoRA Adapter Layer-Drift Measurement — Which Attention Heads Absorbed the Signal
 
 `compute_adapter_layer_drift()` in `trainer/training.py` runs in the narrow window between `model.save_pretrained()` and `model.delete_adapter()` — the only point where the trained lora_A / lora_B tensors are still in memory. It computes the Frobenius norm of every `lora_A` and `lora_B` matrix across all adapted layers and writes a `layer_drift` dict to `eval.json`.

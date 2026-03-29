@@ -453,7 +453,8 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
             yield _sse({"phase": "specialist", "speaker": spec_handle, "task": task})
 
             def run_spec(s=spec, sh=spec_handle, sr=spec.role_slot.role,
-                         hist=[{"sender": "user", "content": task}], toks=spec_tokens):
+                         hist=[{"sender": "user", "content": task}], toks=spec_tokens,
+                         pm=lead):
                 try:
                     if body.use_grok:
                         text = grok_chat(
@@ -464,6 +465,10 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
                             tools=TOOL_SCHEMAS,
                         )
                     else:
+                        # Blend the specialist adapter (0.7) with the PM adapter (0.3)
+                        # in weight space so the PM's framing is encoded in the weights,
+                        # not injected as a system prompt. Falls back to specialist-only
+                        # if either adapter is missing or the merge fails.
                         text = agent_chat(
                             lora_path=s.dna_path,
                             adapter_name=sh,
@@ -474,6 +479,9 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
                             workspace_dir=workspace,
                             tools=TOOL_SCHEMAS,
                             system_prompt=s.system_prompt or None,
+                            blend_lora_path=pm.dna_path,
+                            blend_adapter_name=pm.github_handle,
+                            blend_weight=0.7,
                         )
                     toks.append(text)
                 except Exception as e:
