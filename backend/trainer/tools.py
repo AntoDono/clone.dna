@@ -168,18 +168,17 @@ _BLOCKED_COMMAND_PREFIXES = {
     "poweroff",
     "launchctl",
 }
-_BLOCKED_COMMAND_TOKENS = {
-    "&&",
-    "||",
-    ";",
-    "|",
+# Shell chaining operators (allowed when total segments ≤ _MAX_CHAINED_COMMANDS).
+_CHAIN_SEPARATOR_TOKENS = frozenset({"&&", "||", ";", "|"})
+_MAX_CHAINED_COMMANDS = 3
+
+# Still blocked: redirects and command substitution (even when chaining is allowed).
+_BLOCKED_COMMAND_METACHAR_SUBSTRINGS = (
     ">",
-    ">>",
     "<",
-    "<<",
     "$(",
     "`",
-}
+)
 
 
 def _safe_path(workspace: Path, relative: str) -> Path:
@@ -265,6 +264,54 @@ def _exec_edit_file(workspace: Path, args: dict) -> str:
     return f"Edited {args['path']}"
 
 
+def _parse_command_segments(tokens: list[str]) -> list[list[str]]:
+    """Split shlex tokens into argv lists separated by && || ; |."""
+    segments: list[list[str]] = []
+    current: list[str] = []
+    for t in tokens:
+        if t in _CHAIN_SEPARATOR_TOKENS:
+            segments.append(current)
+            current = []
+        else:
+            current.append(t)
+    segments.append(current)
+    return segments
+
+
+def _validate_run_command_policy(command: str) -> None:
+    """Enforce redirect/subshell blocks, max chain length, and per-segment blocked prefixes."""
+    if any(s in command for s in _BLOCKED_COMMAND_METACHAR_SUBSTRINGS):
+        raise PermissionError(
+            "Command policy violation: redirects and command substitution are not allowed"
+        )
+    try:
+        tokens = shlex.split(command, posix=True)
+    except ValueError as e:
+        raise PermissionError(f"Command policy violation: invalid shell quoting ({e})") from e
+    if not tokens:
+        raise PermissionError("Command policy violation: command is empty")
+    if tokens[0] in _CHAIN_SEPARATOR_TOKENS or tokens[-1] in _CHAIN_SEPARATOR_TOKENS:
+        raise PermissionError("Command policy violation: invalid command chain (empty segment)")
+    for i in range(len(tokens) - 1):
+        if tokens[i] in _CHAIN_SEPARATOR_TOKENS and tokens[i + 1] in _CHAIN_SEPARATOR_TOKENS:
+            raise PermissionError("Command policy violation: invalid command chain (consecutive operators)")
+
+    segments = _parse_command_segments(tokens)
+    if len(segments) > _MAX_CHAINED_COMMANDS:
+        raise PermissionError(
+            f"Command policy violation: at most {_MAX_CHAINED_COMMANDS} chained commands allowed "
+            f"(got {len(segments)})"
+        )
+    for seg in segments:
+        if not seg:
+            raise PermissionError("Command policy violation: invalid command chain (empty segment)")
+        root = Path(seg[0]).name.lower()
+        if root in _BLOCKED_COMMAND_PREFIXES:
+            raise PermissionError(
+                f"Command policy violation: command '{root}' is blocked by the workspace sandbox policy"
+            )
+
+
 def _exec_run_command(workspace: Path, args: dict) -> str:
     """Execute a workspace-local command with basic sandbox policy enforcement."""
     command = args["command"]
@@ -272,21 +319,10 @@ def _exec_run_command(workspace: Path, args: dict) -> str:
         command = command.strip()
         if not command:
             return "Error: command is empty"
-        if any(token in command for token in _BLOCKED_COMMAND_TOKENS):
-            raise PermissionError(
-                "Command policy violation: shell metacharacters are blocked; "
-                "run a single command without pipes, redirects, or chaining"
-            )
-
-        argv = shlex.split(command)
-        if not argv:
-            return "Error: command is empty"
-        root = Path(argv[0]).name.lower()
-        if root in _BLOCKED_COMMAND_PREFIXES:
-            raise PermissionError(f"Command policy violation: command '{root}' is blocked by the workspace sandbox policy")
+        _validate_run_command_policy(command)
 
         result = subprocess.run(
-            argv,
+            ["/bin/sh", "-c", command],
             shell=False,
             cwd=str(workspace.resolve()),
             capture_output=True,
