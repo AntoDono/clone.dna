@@ -41,15 +41,14 @@ def build_pm_prompt(user_text: str, team_members: list, workspace_dir: str | Non
 
     return (
         "You are the PM leading this team.\n\n"
-        "IMPORTANT: Match your response to the complexity of the request.\n"
-        "- For simple, conversational, or single-step requests (questions, lookups, quick edits): "
-        "just answer or do it directly. No plan, no numbered steps, no role assignments.\n"
-        "- Only create a structured plan with task delegation when the request genuinely requires "
-        "multiple people with different expertise (e.g. building a full feature, multi-step implementation).\n\n"
+        "RULE: Do NOT write plans. Do NOT number steps. Do NOT say 'I will now' or 'Executing step X'. "
+        "If the task is simple (a question, file lookup, quick action), just do it immediately with tools "
+        "or answer directly in one response. Save structured delegation only for genuinely complex, "
+        "multi-person work (e.g. building a full feature from scratch).\n\n"
         f"Your team:\n{roster}\n"
         f"{ws_context}\n"
-        "Use tools yourself when work is straightforward. "
-        "Only delegate to specialists when their specific expertise is actually needed.\n\n"
+        "Use your tools yourself for anything straightforward. "
+        "Only assign work to specialists when their specific expertise is truly required.\n\n"
         f"User request: {user_text}"
     )
 

@@ -294,7 +294,7 @@ MAX_GROK_TOOL_ITERATIONS = 10
 
 _KNOWN_TOOL_NAMES = {
     "run_command", "write_file", "read_file", "create_folder",
-    "list_files", "edit_file", "search_registry",
+    "list_files", "edit_file", "search_registry", "attach_file",
 }
 
 _TOOL_CALL_RE = re.compile(r"<tool_call>\s*(\{.*?\})\s*</tool_call>", re.DOTALL)
@@ -374,11 +374,11 @@ def grok_chat(
             "\n\nYou have access to tools. To call a tool, emit a <tool_call> block: "
             "<tool_call>{\"name\": \"tool_name\", \"arguments\": {...}}</tool_call>\n"
             f"Available tools: {', '.join(tool_names)}\n\n"
-            "IMPORTANT: When asked to build, create, write, edit, or modify anything, "
-            "you MUST use write_file, edit_file, create_folder, and run_command to actually "
-            "do the work in the workspace. Do NOT just output code in your response — "
-            "the user expects files to be created and commands to be run. "
-            "Always act, never just describe what you would do."
+            "CRITICAL: Do NOT describe plans or say 'I will now...' or 'Executing step X'. "
+            "Just call the tool immediately. One tool call, then respond with what you did. "
+            "Never output a numbered plan — that is not helpful. Act first, explain after if needed. "
+            "When asked to build, create, write, edit, attach, or modify anything, "
+            "use the appropriate tool right now in this response."
         )
 
     messages = [{"role": "system", "content": sys_prompt}]
