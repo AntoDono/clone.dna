@@ -26,6 +26,7 @@ interface DnaBlock {
     style_consistency?: number
     domain_accuracy?: number
     latency_overhead_ms?: number
+    perplexity_reduction_ratio?: number
     teacher_model?: string
   }
   training_pairs?: number
@@ -107,12 +108,20 @@ onMounted(fetchBlocks)
         <span class="text-slate-600">|</span>
         <span class="text-sm font-medium text-slate-400">Talent Registry</span>
       </div>
-      <NuxtLink
-        to="/"
-        class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
-      >
-        Teams
-      </NuxtLink>
+      <div class="flex items-center gap-2">
+        <NuxtLink
+          to="/developer"
+          class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
+        >
+          Developer Portal
+        </NuxtLink>
+        <NuxtLink
+          to="/"
+          class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
+        >
+          Teams
+        </NuxtLink>
+      </div>
     </header>
 
     <!-- Main -->
@@ -183,7 +192,7 @@ onMounted(fetchBlocks)
           </div>
 
           <!-- Scores row -->
-          <div class="grid grid-cols-3 gap-3 text-xs mb-3">
+          <div class="grid grid-cols-4 gap-3 text-xs mb-3">
             <div>
               <p class="text-slate-600 mb-0.5">Style</p>
               <p class="text-slate-300 font-medium">{{ formatScore(block.eval_summary.style_consistency) }}</p>
@@ -191,6 +200,12 @@ onMounted(fetchBlocks)
             <div>
               <p class="text-slate-600 mb-0.5">Domain</p>
               <p class="text-slate-300 font-medium">{{ formatScore(block.eval_summary.domain_accuracy) }}</p>
+            </div>
+            <div>
+              <p class="text-slate-600 mb-0.5">PPL Δ</p>
+              <p class="font-medium" :class="block.eval_summary.perplexity_reduction_ratio && block.eval_summary.perplexity_reduction_ratio > 1 ? 'text-green-400' : 'text-slate-500'">
+                {{ block.eval_summary.perplexity_reduction_ratio ? `×${block.eval_summary.perplexity_reduction_ratio.toFixed(2)}` : '—' }}
+              </p>
             </div>
             <div>
               <p class="text-slate-600 mb-0.5">Loss</p>
