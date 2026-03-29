@@ -1,4 +1,3 @@
 [build]
   base    = "frontend"
   command = "bun run generate"
-  publish = ".output/public"
