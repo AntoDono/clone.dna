@@ -114,6 +114,7 @@ onUnmounted(() => {
         @send="chat.sendMessage()"
         @stop="chat.stopStreaming()"
         @keydown="chat.handleKeydown"
+        @toggle-grok="chat.toggleGrok()"
       />
     </div>
   </div>
