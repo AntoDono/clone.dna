@@ -138,9 +138,10 @@ export function useTeamChat(teamId: number, apiBase: string) {
 
     let response: Response
     try {
+      const chatToken = import.meta.client ? (localStorage.getItem('auth_token') ?? '') : ''
       response = await fetch(`${apiBase}/teams/${teamId}/build/chat`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(chatToken ? { Authorization: `Bearer ${chatToken}` } : {}) },
         body: JSON.stringify({ handle: key, message, use_grok: useGrok.value }),
         signal: abortController.signal,
       })
@@ -274,9 +275,10 @@ export function useTeamChat(teamId: number, apiBase: string) {
 
     let response: Response
     try {
+      const orchToken = import.meta.client ? (localStorage.getItem('auth_token') ?? '') : ''
       response = await fetch(`${apiBase}/teams/${teamId}/build/orchestrate`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(orchToken ? { Authorization: `Bearer ${orchToken}` } : {}) },
         body: JSON.stringify({ prompt, use_grok: useGrok.value }),
         signal: abortController.signal,
       })

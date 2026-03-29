@@ -4,17 +4,21 @@ Teams router — CRUD for teams and role slots.
 Each team has a fixed layout of 4 role slots (1 PM, 2 SWE, 1 Designer) created
 atomically on team creation. Deleting a team cascades to all slots, candidates,
 and chat messages.
+
+All team endpoints require a valid Bearer token — teams are scoped to the
+authenticated user. require_team_owner() is exported for use by other routers.
 """
 
 import json
 import secrets
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel as PydanticModel
 
 from db import db
-from models import Team, RoleSlot, Candidate
+from models import Team, RoleSlot, Candidate, User
+from routes.auth import get_current_user
 
 router = APIRouter()
 
@@ -33,45 +37,26 @@ class CreateTeamRequest(PydanticModel):
     name: str
 
 
-@router.post("/teams", status_code=201)
-def create_team(body: CreateTeamRequest):
-    """Create a team with a fixed layout of 4 role slots (1 PM, 2 SWE, 1 Designer), generated atomically."""
-    with db.atomic():
-        pair_code = secrets.token_hex(3)
-        team = Team.create(name=body.name.strip(), discord_pair_code=pair_code)
-        for r in ROLE_LAYOUT:
-            RoleSlot.create(team=team, role=r["role"], slot_index=r["slot_index"])
-    return team.to_dict()
+# ── Shared helpers (also used by candidates / clone / build routers) ──────────
 
+def require_team_owner(team_id: int, user: User) -> Team:
+    """Fetch a Team by ID and assert it belongs to the requesting user.
 
-@router.get("/teams")
-def list_teams():
-    """Return all teams ordered by creation date descending."""
-    return [t.to_dict() for t in Team.select().order_by(Team.created_at.desc())]
-
-
-@router.get("/teams/{team_id}")
-def get_team(team_id: int):
-    """Return a single team with all role slots and their assigned candidates."""
+    Returns the Team on success. Raises 404 if not found, 403 if ownership
+    mismatch.  Teams with user_id=NULL (legacy rows) are accessible to all
+    authenticated users.
+    """
     try:
-        return Team.get_by_id(team_id).to_dict()
+        team = Team.get_by_id(team_id)
     except Team.DoesNotExist:
         raise HTTPException(404, "Team not found")
+    if team.user_id is not None and team.user_id != user.id:
+        raise HTTPException(403, "You don't have access to this team")
+    return team
 
-
-@router.delete("/teams/{team_id}", status_code=204)
-def delete_team(team_id: int):
-    """Delete a team and all associated role slots, candidates, and messages."""
-    try:
-        Team.get_by_id(team_id).delete_instance(recursive=True)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
-
-
-# ── Shared helpers (also used by candidates router) ───────────────────────────
 
 def get_slot(team_id: int, slot_id: int) -> RoleSlot:
-    """Fetch a RoleSlot by ID, verifying it belongs to the specified team. Raises 404 if not found or team mismatch."""
+    """Fetch a RoleSlot by ID, verifying it belongs to the specified team."""
     try:
         slot = RoleSlot.get_by_id(slot_id)
     except RoleSlot.DoesNotExist:
@@ -82,7 +67,7 @@ def get_slot(team_id: int, slot_id: int) -> RoleSlot:
 
 
 def save_candidate(slot: RoleSlot, profile: dict) -> dict:
-    """Persist a candidate profile to a slot inside a transaction, replacing any previous candidate and marking the slot as filled."""
+    """Persist a candidate profile to a slot, replacing any previous candidate."""
     scalar = {k: v for k, v in profile.items() if k not in JSON_FIELDS}
     with db.atomic():
         Candidate.delete().where(Candidate.role_slot == slot).execute()
@@ -101,3 +86,39 @@ def save_candidate(slot: RoleSlot, profile: dict) -> dict:
         slot.filled = True
         slot.save()
     return candidate.to_dict()
+
+
+# ── Endpoints ─────────────────────────────────────────────────────────────────
+
+@router.post("/teams", status_code=201)
+def create_team(body: CreateTeamRequest, current_user: User = Depends(get_current_user)):
+    """Create a team (owned by the authenticated user) with 4 fixed role slots."""
+    with db.atomic():
+        pair_code = secrets.token_hex(3)
+        team = Team.create(name=body.name.strip(), discord_pair_code=pair_code, user=current_user)
+        for r in ROLE_LAYOUT:
+            RoleSlot.create(team=team, role=r["role"], slot_index=r["slot_index"])
+    return team.to_dict()
+
+
+@router.get("/teams")
+def list_teams(current_user: User = Depends(get_current_user)):
+    """Return all teams owned by the authenticated user, newest first."""
+    return [
+        t.to_dict()
+        for t in Team.select()
+        .where((Team.user == current_user) | (Team.user.is_null()))
+        .order_by(Team.created_at.desc())
+    ]
+
+
+@router.get("/teams/{team_id}")
+def get_team(team_id: int, current_user: User = Depends(get_current_user)):
+    """Return a single team with all role slots and their assigned candidates."""
+    return require_team_owner(team_id, current_user).to_dict()
+
+
+@router.delete("/teams/{team_id}", status_code=204)
+def delete_team(team_id: int, current_user: User = Depends(get_current_user)):
+    """Delete a team and all associated role slots, candidates, and messages."""
+    require_team_owner(team_id, current_user).delete_instance(recursive=True)

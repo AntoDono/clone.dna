@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import logging
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
@@ -87,6 +88,57 @@ def fetch_repo_code(owner: str, repo: str) -> str:
         total += len(snippet)
 
     return "\n\n".join(code_parts)
+
+
+def fetch_recent_commits(owner: str, repo: str, limit: int = 25) -> list[dict]:
+    """Fetch up to `limit` recent commits from a repo, returning dicts with 'sha', 'message', and 'date'."""
+    data = _gh_get(
+        f"{GITHUB_API}/repos/{owner}/{repo}/commits",
+        {"per_page": min(limit, 100)},
+    )
+    if not data or not isinstance(data, list):
+        return []
+    commits = []
+    for item in data[:limit]:
+        commit = item.get("commit", {})
+        committer = commit.get("committer") or commit.get("author") or {}
+        commits.append({
+            "sha": item.get("sha", "")[:7],
+            "message": (commit.get("message") or "").split("\n")[0][:120],
+            "date": committer.get("date", ""),
+        })
+    return commits
+
+
+def compute_commit_velocity(commits: list[dict]) -> float | None:
+    """Compute commits-per-week over the span covered by the provided commit list.
+
+    Returns None if fewer than 2 commits are provided (can't compute a span).
+    """
+    if len(commits) < 2:
+        return None
+
+    dates: list[datetime] = []
+    for c in commits:
+        raw = c.get("date", "")
+        if not raw:
+            continue
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            dates.append(dt)
+        except Exception:
+            continue
+
+    if len(dates) < 2:
+        return None
+
+    dates.sort()
+    span_days = (dates[-1] - dates[0]).total_seconds() / 86400
+    if span_days < 1:
+        return None
+
+    commits_per_week = len(dates) / (span_days / 7)
+    return round(commits_per_week, 2)
 
 
 def collect_training_data(

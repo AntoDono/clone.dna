@@ -14,7 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db import db, init_db
 from trainer import warmup_model
-from routes import teams_router, candidates_router, clone_dna_router, build_router, registry_router
+from routes import auth_router, teams_router, candidates_router, clone_dna_router, build_router, registry_router
 from discord_bot import start_bot
 
 logger = logging.getLogger(__name__)
@@ -40,9 +40,10 @@ app.add_middleware(
     allow_origin_regex=r"https?://.*",
     allow_methods=["*"],
     allow_headers=["*"],
-    allow_credentials=False,
+    allow_credentials=True,
 )
 
+app.include_router(auth_router)
 app.include_router(teams_router)
 app.include_router(candidates_router)
 app.include_router(clone_dna_router)

@@ -118,8 +118,11 @@ let es: EventSource | null = null
 
 // Open SSE stream to /headhunt/stream, populate pool as candidates arrive
 function startStream(force = false) {
+  const token = import.meta.client ? (localStorage.getItem('auth_token') ?? '') : ''
   const base = `${config.public.apiBase}/teams/${props.teamId}/headhunt/stream`
-  const url = force ? `${base}?force=true` : base
+  const params = new URLSearchParams({ token })
+  if (force) params.set('force', 'true')
+  const url = `${base}?${params}`
   es = new EventSource(url)
 
   es.onmessage = (event: MessageEvent) => {

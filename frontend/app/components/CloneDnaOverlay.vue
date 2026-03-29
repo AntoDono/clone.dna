@@ -114,8 +114,10 @@ function getState(handle: string): CandidateState | undefined {
 let es: EventSource | null = null
 
 function startStream() {
-  let url = `${config.public.apiBase}/teams/${props.teamId}/clone-dna/stream`
-  if (props.emergencyCalibration) url += '?emergency_calibration=1'
+  const token = import.meta.client ? (localStorage.getItem('auth_token') ?? '') : ''
+  const params = new URLSearchParams({ token })
+  if (props.emergencyCalibration) params.set('emergency_calibration', '1')
+  const url = `${config.public.apiBase}/teams/${props.teamId}/clone-dna/stream?${params}`
   es = new EventSource(url)
 
   es.onmessage = (event: MessageEvent) => {

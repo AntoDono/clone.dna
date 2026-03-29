@@ -2,6 +2,7 @@
 ORM models — Peewee models for all persistent entities.
 
 Schema:
+  User        — an account with username + hashed password; owns teams
   Team        — a named hiring team with a fixed 4-slot layout (1 PM, 2 SWE, 1 Designer)
   RoleSlot    — one role slot within a team; tracks fill status and slot index
   Candidate   — a candidate assigned to a slot; stores full profile data, DNA clone
@@ -29,10 +30,19 @@ class BaseModel(Model):
         database = db
 
 
+class User(BaseModel):
+    """An account — owns teams, authenticated via JWT."""
+
+    username = CharField(unique=True)
+    password_hash = CharField()
+    created_at = DateTimeField(default=datetime.utcnow)
+
+
 class Team(BaseModel):
-    """A hiring team with a fixed 4-slot layout (1 PM, 2 SWE, 1 Designer)."""
+    """A named hiring team with a fixed 4-slot layout (1 PM, 2 SWE, 1 Designer)."""
 
     name = CharField()
+    user = ForeignKeyField(User, backref="teams", null=True, on_delete="CASCADE")
     discord_pair_code = CharField(null=True)
     created_at = DateTimeField(default=datetime.utcnow)
 

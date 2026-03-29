@@ -91,61 +91,86 @@ export interface FitScoreResponse {
   ranked: CandidateFitScore[]
 }
 
+/** Read the stored JWT — returns null if not available (SSR or not logged in). */
+function getAuthHeaders(): Record<string, string> {
+  if (!import.meta.client) return {}
+  const token = localStorage.getItem('auth_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 /** Typed API client for all Clone.dna backend REST endpoints. Use within Nuxt component context. */
 export const useApi = () => {
   const config = useRuntimeConfig()
   const base = config.public.apiBase
 
+  const h = () => getAuthHeaders()
+
   return {
+    /** Remove token and username from storage (call before redirecting to /login). */
+    logout: () => {
+      if (import.meta.client) {
+        localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_username')
+      }
+    },
+
+    /** Currently logged-in username, or null. */
+    getUsername: (): string | null =>
+      import.meta.client ? localStorage.getItem('auth_username') : null,
+
     getTeams: (): Promise<Team[]> =>
-      $fetch(`${base}/teams`),
+      $fetch(`${base}/teams`, { headers: h() }),
 
     createTeam: (name: string): Promise<Team> =>
-      $fetch(`${base}/teams`, { method: 'POST', body: { name } }),
+      $fetch(`${base}/teams`, { method: 'POST', body: { name }, headers: h() }),
 
     getTeam: (id: number): Promise<Team> =>
-      $fetch(`${base}/teams/${id}`),
+      $fetch(`${base}/teams/${id}`, { headers: h() }),
 
     deleteTeam: (id: number): Promise<void> =>
-      $fetch(`${base}/teams/${id}`, { method: 'DELETE' }),
+      $fetch(`${base}/teams/${id}`, { method: 'DELETE', headers: h() }),
 
     searchCandidates: (teamId: number, slotId: number, force = false): Promise<SearchResult> =>
-      $fetch(`${base}/teams/${teamId}/roles/${slotId}/search${force ? '?force=true' : ''}`),
+      $fetch(`${base}/teams/${teamId}/roles/${slotId}/search${force ? '?force=true' : ''}`, { headers: h() }),
 
     selectCandidate: (teamId: number, slotId: number, github_handle: string): Promise<CandidateProfile> =>
       $fetch(`${base}/teams/${teamId}/roles/${slotId}/select`, {
         method: 'POST',
         body: { github_handle },
+        headers: h(),
       }),
 
     extractFromWebsite: (teamId: number, slotId: number, url: string): Promise<CandidateProfile> =>
       $fetch(`${base}/teams/${teamId}/roles/${slotId}/extract-website`, {
         method: 'POST',
         body: { url },
+        headers: h(),
       }),
 
     extractFromResume: (teamId: number, slotId: number, text: string): Promise<CandidateProfile> =>
       $fetch(`${base}/teams/${teamId}/roles/${slotId}/extract-resume`, {
         method: 'POST',
         body: { text },
+        headers: h(),
       }),
 
     removeCandidate: (teamId: number, slotId: number): Promise<void> =>
-      $fetch(`${base}/teams/${teamId}/roles/${slotId}/candidate`, { method: 'DELETE' }),
+      $fetch(`${base}/teams/${teamId}/roles/${slotId}/candidate`, { method: 'DELETE', headers: h() }),
 
     clearHeadhuntCache: (teamId: number): Promise<void> =>
-      $fetch(`${base}/teams/${teamId}/headhunt/cache`, { method: 'DELETE' }),
+      $fetch(`${base}/teams/${teamId}/headhunt/cache`, { method: 'DELETE', headers: h() }),
 
     scoreHeadhuntCandidates: (teamId: number, jobDescription: string, role: string): Promise<FitScoreResponse> =>
       $fetch(`${base}/teams/${teamId}/headhunt/score`, {
         method: 'POST',
         body: { job_description: jobDescription, role },
+        headers: h(),
       }),
 
     revokeBlock: (teamId: string, handle: string): Promise<{ status: string }> =>
-      $fetch(`${base}/registry/${teamId}/${handle}`, { method: 'DELETE' }),
+      $fetch(`${base}/registry/${teamId}/${handle}`, { method: 'DELETE', headers: h() }),
 
     getBuildMessages: (teamId: number, thread: string): Promise<ChatMessage[]> =>
-      $fetch(`${base}/teams/${teamId}/build/messages?thread=${encodeURIComponent(thread)}`),
+      $fetch(`${base}/teams/${teamId}/build/messages?thread=${encodeURIComponent(thread)}`, { headers: h() }),
   }
 }

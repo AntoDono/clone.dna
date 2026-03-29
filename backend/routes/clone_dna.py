@@ -22,12 +22,14 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from db import db
-from models import Team, RoleSlot, Candidate
+from models import Team, RoleSlot, Candidate, User
 from trainer import collect_training_data, generate_training_pairs, generate_system_prompt, generate_personality_profile, train_lora
+from routes.auth import get_current_user
+from routes.teams import require_team_owner
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -183,12 +185,9 @@ async def _emergency_skip_candidate(candidate: dict, team_id: int, dnas_root: Pa
 
 
 @router.get("/teams/{team_id}/clone-dna/stream")
-async def clone_dna_stream(team_id: int, emergency_calibration: int = 0):
+async def clone_dna_stream(team_id: int, emergency_calibration: int = 0, current_user: User = Depends(get_current_user)):
     """Stream the complete .dna minting pipeline over SSE: collect code → generate pairs → train LoRA → save block."""
-    try:
-        team = Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    team = require_team_owner(team_id, current_user)
 
     candidates: list[dict] = []
     for slot in team.slots.order_by(RoleSlot.id):

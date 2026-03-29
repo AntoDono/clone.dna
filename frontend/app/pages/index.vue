@@ -15,6 +15,12 @@ const showModal = ref(false)
 const newTeamName = ref('')
 const creating = ref(false)
 const createError = ref('')
+const username = ref('')
+
+function logout() {
+  api.logout()
+  router.push('/login')
+}
 
 async function fetchTeams() {
   loading.value = true
@@ -50,7 +56,10 @@ function filledCount(team: Team) {
 
 const ROLE_LABEL: Record<string, string> = { pm: 'PM', swe: 'SWE', designer: 'Design' }
 
-onMounted(fetchTeams)
+onMounted(() => {
+  username.value = api.getUsername() ?? ''
+  fetchTeams()
+})
 </script>
 
 <template>
@@ -63,6 +72,7 @@ onMounted(fetchTeams)
         <span class="ml-2 text-sm text-slate-500 hidden sm:inline">Hire the Mind. Not the Body.</span>
       </div>
       <div class="flex items-center gap-3">
+        <span v-if="username" class="text-xs text-slate-500 hidden sm:inline">{{ username }}</span>
         <NuxtLink
           to="/registry"
           class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
@@ -74,6 +84,12 @@ onMounted(fetchTeams)
           @click="openModal"
         >
           + New Team
+        </button>
+        <button
+          class="border border-slate-700 text-slate-500 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-slate-300 transition-colors"
+          @click="logout"
+        >
+          Sign out
         </button>
       </div>
     </header>

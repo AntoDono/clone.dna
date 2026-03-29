@@ -19,12 +19,12 @@ Caching (two layers):
 import asyncio
 import json
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel as PydanticModel
 
 from db import db
-from models import Team, RoleSlot, Candidate
+from models import Team, RoleSlot, Candidate, User
 from extractor import (
     search_candidates,
     search_users_raw,
@@ -33,7 +33,8 @@ from extractor import (
     extract_from_resume,
     score_candidates_against_jd,
 )
-from routes.teams import get_slot, save_candidate
+from routes.auth import get_current_user
+from routes.teams import get_slot, save_candidate, require_team_owner
 
 router = APIRouter()
 
@@ -59,12 +60,9 @@ class FitScoreRequest(PydanticModel):
 # ── Headhunt SSE ──────────────────────────────────────────────────────────────
 
 @router.get("/teams/{team_id}/headhunt/stream")
-async def headhunt_stream(team_id: int, force: bool = Query(False)):
+async def headhunt_stream(team_id: int, force: bool = Query(False), current_user: User = Depends(get_current_user)):
     """Stream GitHub headhunt results over SSE: searches by role, builds profiles, caches results per team. Accepts force=true to bypass cache."""
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    require_team_owner(team_id, current_user)
 
     async def generator():
         if not force and team_id in _headhunt_cache:
@@ -110,7 +108,8 @@ async def headhunt_stream(team_id: int, force: bool = Query(False)):
 
 
 @router.delete("/teams/{team_id}/headhunt/cache", status_code=204)
-def clear_headhunt_cache(team_id: int):
+def clear_headhunt_cache(team_id: int, current_user: User = Depends(get_current_user)):
+    require_team_owner(team_id, current_user)
     _headhunt_cache.pop(team_id, None)
     try:
         from models import GithubProfileCache
@@ -120,7 +119,7 @@ def clear_headhunt_cache(team_id: int):
 
 
 @router.post("/teams/{team_id}/headhunt/score")
-def score_headhunt_candidates(team_id: int, body: FitScoreRequest):
+def score_headhunt_candidates(team_id: int, body: FitScoreRequest, current_user: User = Depends(get_current_user)):
     """
     Score all cached headhunt candidates against a job description using Grok.
 
@@ -129,10 +128,7 @@ def score_headhunt_candidates(team_id: int, body: FitScoreRequest):
     plus per-candidate strengths, gaps, and reasoning. Uses the team's in-memory headhunt
     cache; call the headhunt stream first to populate candidates.
     """
-    try:
-        Team.get_by_id(team_id)
-    except Team.DoesNotExist:
-        raise HTTPException(404, "Team not found")
+    require_team_owner(team_id, current_user)
 
     cached = _headhunt_cache.get(team_id, [])
     candidates = [event["candidate"] for event in cached if "candidate" in event]
@@ -171,8 +167,9 @@ def score_headhunt_candidates(team_id: int, body: FitScoreRequest):
 # ── Role search ───────────────────────────────────────────────────────────────
 
 @router.get("/teams/{team_id}/roles/{slot_id}/search")
-def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
+def search_role(team_id: int, slot_id: int, force: bool = Query(False), current_user: User = Depends(get_current_user)):
     """Return cached or freshly fetched candidates for a role slot. Accepts ?force=true to bypass _search_cache."""
+    require_team_owner(team_id, current_user)
     slot = get_slot(team_id, slot_id)
     key = (team_id, slot_id)
     if not force and key in _search_cache:
@@ -186,8 +183,9 @@ def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
 # ── Website / resume extraction ───────────────────────────────────────────────
 
 @router.post("/teams/{team_id}/roles/{slot_id}/extract-website", status_code=201)
-def extract_website(team_id: int, slot_id: int, body: ExtractWebsiteRequest):
+def extract_website(team_id: int, slot_id: int, body: ExtractWebsiteRequest, current_user: User = Depends(get_current_user)):
     """Scrape a URL, extract a candidate profile via Grok, and persist to the slot."""
+    require_team_owner(team_id, current_user)
     slot = get_slot(team_id, slot_id)
     try:
         profile = extract_from_website(body.url.strip(), role=slot.role)
@@ -199,8 +197,9 @@ def extract_website(team_id: int, slot_id: int, body: ExtractWebsiteRequest):
 
 
 @router.post("/teams/{team_id}/roles/{slot_id}/extract-resume", status_code=201)
-def extract_resume(team_id: int, slot_id: int, body: ExtractResumeRequest):
+def extract_resume(team_id: int, slot_id: int, body: ExtractResumeRequest, current_user: User = Depends(get_current_user)):
     """Extract a candidate profile from raw resume text via Grok and persist to the slot."""
+    require_team_owner(team_id, current_user)
     slot = get_slot(team_id, slot_id)
     try:
         profile = extract_from_resume(body.text.strip(), role=slot.role)
@@ -214,8 +213,9 @@ def extract_resume(team_id: int, slot_id: int, body: ExtractResumeRequest):
 # ── Candidate select / remove ─────────────────────────────────────────────────
 
 @router.post("/teams/{team_id}/roles/{slot_id}/select", status_code=201)
-def select_candidate(team_id: int, slot_id: int, body: SelectCandidateRequest):
+def select_candidate(team_id: int, slot_id: int, body: SelectCandidateRequest, current_user: User = Depends(get_current_user)):
     """Fetch a GitHub user profile and assign them to the specified role slot."""
+    require_team_owner(team_id, current_user)
     slot = get_slot(team_id, slot_id)
     profile = build_github_profile(body.github_handle, role=slot.role)
     if not profile:
@@ -225,8 +225,9 @@ def select_candidate(team_id: int, slot_id: int, body: SelectCandidateRequest):
 
 
 @router.delete("/teams/{team_id}/roles/{slot_id}/candidate", status_code=204)
-def remove_candidate(team_id: int, slot_id: int):
+def remove_candidate(team_id: int, slot_id: int, current_user: User = Depends(get_current_user)):
     """Remove the candidate from a role slot and mark the slot as unfilled."""
+    require_team_owner(team_id, current_user)
     slot = get_slot(team_id, slot_id)
     with db.atomic():
         Candidate.delete().where(Candidate.role_slot == slot).execute()
