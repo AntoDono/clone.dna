@@ -174,6 +174,9 @@ class TestDnaPackaging:
         content = (block_dir / "profile.md").read_text()
         assert len(content) > 50, "profile.md seems too short"
 
+    def test_teacher_config_exists(self, block_dir):
+        assert (block_dir / "teacher_config.json").exists(), "teacher_config.json missing"
+
 
 class TestVllmValidation:
     """Unit tests for validate_vllm_export without real adapter weights."""

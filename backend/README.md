@@ -109,6 +109,7 @@ The stream emits JSON events at each pipeline stage so the frontend can display 
 | `POST` | `.../compare` | **SSE stream** — side-by-side: same prompt through raw base model and adapter-loaded model |
 | `POST` | `.../orchestrate` | **SSE stream** — PM orchestration; PM plans the response, Grok assigns tasks, each specialist responds in sequence |
 | `GET` | `.../messages` | Full message history for the team's build workspace |
+| `GET` | `.../artifacts` | Latest orchestration artifact plus recent workspace tool-audit events |
 
 ### Registry — `/registry`
 
@@ -123,13 +124,13 @@ The stream emits JSON events at each pipeline stage so the frontend can display 
 
 The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in sequence:
 
-1. **Repo collection** (`trainer/github.py`) — fetches the candidate's top public repos, filters by language and license, downloads source files up to a configurable token budget.
+1. **Repo collection** (`trainer/github.py`) — fetches the candidate's top public repos, enforces an MIT/Apache-2.0 license policy from GitHub repo metadata, then downloads source files up to a configurable token budget.
 
 2. **Pair generation** (`trainer/grok.py`) — sends code chunks to Grok-4 (70B teacher). The teacher reads the developer's actual code and generates the *instruction* side of each pair (the problem statement, architectural context, or task description that would naturally produce that code). The developer's code is the *completion*. Results are cached to `GROK_CACHE_DIR` so reruns skip the API call. Typically generates 18–60 pairs per candidate.
 
 3. **LoRA training** (`trainer/training.py`) — freezes the base model and trains a LoRA adapter (rank=32, alpha=128) using PEFT + HuggingFace `Trainer`. Training pairs are mixed with Alpaca-cleaned examples (50% ratio) and 24 tool-use demonstrations to preserve general capability.
 
-4. **`.dna` block write** — saves the adapter weights plus five metadata files to `dnas/{team_id}/{handle}/`:
+4. **`.dna` block write** — saves the adapter weights plus metadata files to `dnas/{team_id}/{handle}/`:
    - `manifest.json` — candidate metadata, base model, rank/alpha, eval summary
    - `eval.json` — loss history, pair counts, benchmark scores
    - `sources.json` — provenance for every source repo
@@ -143,6 +144,7 @@ The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in seq
 
 - **Adapter hot-swap** — the base model is loaded once at startup; adapters are applied with PEFT's `set_adapter` / `load_adapter` on every chat request, enabling multiple role slots to share one GPU copy of the base weights.
 - **Tool-use agent loop** — the model can emit structured tool calls (`read_file`, `write_file`, `run_command`, `list_files`, `search_registry`) that the backend executes inside `AGENT_WORKSPACE_DIR` and feeds back as tool results, enabling the clone to actually write and run code.
+- **Command policy + audit trail** — `run_command` executes a single local command with no shell chaining, redirects, or network/destructive prefixes, and every tool invocation is appended to `.clone_dna/tool_audit.jsonl` inside the team workspace.
 - **Reference-counted eviction** — when training jobs need VRAM, `borrow_model_for_training()` evicts the inference model. The first training job evicts; intermediate jobs proceed directly; the last job out reloads the model automatically.
 
 ## PM Orchestration Flow
@@ -169,6 +171,8 @@ Each specialist runs **sequentially** — one at a time, in assignment order. Fo
 4. Their response is streamed to the frontend and saved to the `orchestrate` thread
 
 Because specialists share a workspace directory (`agent-workspace/{team_id}/`), each specialist can read and build on files created by prior specialists in the same orchestration turn.
+
+Every orchestration run is also persisted to `.clone_dna/orchestrations/<timestamp>.json` and mirrored to `.clone_dna/latest_orchestration.json`, so the PM plan, specialist assignments, and final outputs are inspectable after the SSE stream ends.
 
 ### SSE Event Sequence
 

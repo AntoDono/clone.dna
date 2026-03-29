@@ -11,6 +11,7 @@ Endpoints:
 """
 
 import asyncio
+import datetime as dt
 import json
 import os
 import threading
@@ -29,6 +30,8 @@ from trainer.tools import TOOL_SCHEMAS
 router = APIRouter()
 
 _WORKSPACE_ROOT = Path(os.getenv("AGENT_WORKSPACE_DIR", "agent-workspace"))
+_META_DIR_NAME = ".clone_dna"
+_RUNS_DIR_NAME = "orchestrations"
 
 
 def _workspace_for_team(team_id: int) -> str:
@@ -36,6 +39,31 @@ def _workspace_for_team(team_id: int) -> str:
     ws = _WORKSPACE_ROOT / str(team_id)
     ws.mkdir(parents=True, exist_ok=True)
     return str(ws)
+
+
+def _workspace_meta_dir(team_id: int) -> Path:
+    """Return the metadata directory used for workspace-local audit artifacts."""
+    meta = Path(_workspace_for_team(team_id)) / _META_DIR_NAME
+    meta.mkdir(parents=True, exist_ok=True)
+    return meta
+
+
+def _persist_workspace_artifact(team_id: int, name: str, payload: dict) -> Path:
+    """Write a JSON artifact into the team's hidden workspace metadata directory."""
+    path = _workspace_meta_dir(team_id) / name
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    return path
+
+
+def _persist_orchestration_run(team_id: int, payload: dict) -> Path:
+    """Persist a full orchestration run and update the latest-run pointer."""
+    runs_dir = _workspace_meta_dir(team_id) / _RUNS_DIR_NAME
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    run_id = dt.datetime.utcnow().strftime("%Y%m%dT%H%M%S%fZ")
+    run_path = runs_dir / f"{run_id}.json"
+    run_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    _persist_workspace_artifact(team_id, "latest_orchestration.json", payload)
+    return run_path
 
 
 class BuildChatRequest(PydanticModel):
@@ -92,6 +120,39 @@ def get_build_messages(team_id: int, thread: str):
         .order_by(ChatMessage.created_at)
     )
     return [m.to_dict() for m in msgs]
+
+
+@router.get("/teams/{team_id}/build/artifacts")
+def get_build_artifacts(team_id: int):
+    """Return the latest orchestration artifact and recent tool audit entries for a team workspace."""
+    try:
+        Team.get_by_id(team_id)
+    except Team.DoesNotExist:
+        raise HTTPException(404, "Team not found")
+
+    meta_dir = _workspace_meta_dir(team_id)
+    latest_orchestration_path = meta_dir / "latest_orchestration.json"
+    audit_path = meta_dir / "tool_audit.jsonl"
+
+    latest_orchestration = None
+    if latest_orchestration_path.exists():
+        latest_orchestration = json.loads(latest_orchestration_path.read_text(encoding="utf-8"))
+
+    audit_events: list[dict] = []
+    if audit_path.exists():
+        for line in audit_path.read_text(encoding="utf-8").splitlines()[-50:]:
+            if not line.strip():
+                continue
+            try:
+                audit_events.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+
+    return {
+        "workspace": _workspace_for_team(team_id),
+        "latest_orchestration": latest_orchestration,
+        "tool_audit_events": audit_events,
+    }
 
 
 # ── Direct message (SSE stream) ───────────────────────────────────────────────
@@ -295,6 +356,16 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
 
     async def generator():
         yield _sse({"phase": "start", "prompt": body.prompt})
+        run_record = {
+            "team_id": team_id,
+            "prompt": body.prompt,
+            "workspace": workspace,
+            "started_at": dt.datetime.utcnow().isoformat() + "Z",
+            "lead": None,
+            "pm_response": "",
+            "assignments": [],
+            "specialist_outputs": [],
+        }
 
         orch_history = [
             m.to_dict()
@@ -307,6 +378,7 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
         # ── Step 1: PM plans ──────────────────────────────────────────────────
         lead = pm_candidate or cloned[0]
         lead_handle = lead.github_handle
+        run_record["lead"] = {"handle": lead_handle, "role": lead.role_slot.role}
         pm_tokens: list[str] = []
 
         pm_history = list(orch_history)
@@ -353,6 +425,7 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
             yield _sse(ev)
 
         pm_response = pm_tokens[0] if pm_tokens else ""
+        run_record["pm_response"] = pm_response
         if pm_response:
             with db.atomic():
                 ChatMessage.create(
@@ -365,6 +438,7 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
         assignments = await asyncio.to_thread(
             assign_tasks, pm_response, specialists, body.prompt, workspace
         )
+        run_record["assignments"] = assignments
 
         # ── Step 3: Each specialist responds ─────────────────────────────────
         handle_map = {c.github_handle: c for c in specialists}
@@ -417,12 +491,21 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
                 yield _sse(ev)
 
             if spec_tokens:
+                run_record["specialist_outputs"].append({
+                    "handle": spec_handle,
+                    "role": spec.role_slot.role,
+                    "task": task,
+                    "response": spec_tokens[0],
+                })
                 with db.atomic():
                     ChatMessage.create(
                         team=team_id, thread="orchestrate",
                         sender=spec_handle, content=spec_tokens[0],
                     )
 
+        run_record["completed_at"] = dt.datetime.utcnow().isoformat() + "Z"
+        artifact_path = _persist_orchestration_run(team_id, run_record)
+        yield _sse({"phase": "artifact", "path": str(artifact_path)})
         yield _sse({"done": True})
 
     return StreamingResponse(
