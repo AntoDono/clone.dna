@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Talent Registry page — browse, search, and download minted .dna blocks.
+ * Fetches all blocks from GET /registry and filters client-side by handle, skills, and tags.
+ * Expandable block cards show eval metrics (style consistency, domain accuracy, loss).
+ * Download link fetches a .zip of the full .dna block from GET /registry/{team_id}/{handle}/download.
+ */
 const config = useRuntimeConfig()
 const base = config.public.apiBase
 

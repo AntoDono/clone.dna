@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Build workspace page for a team.
+ * Left sidebar lists all cloned candidates with role badges.
+ * Main panel is ChatPanel — switches between DM threads and orchestration view.
+ * Loads full message history on mount; defaults to the first cloned candidate's thread.
+ */
 import type { Team, CandidateProfile } from '~/composables/useApi'
 import { useTeamChat } from '~/composables/useTeamChat'
 import TeamSidebar from '~/components/build/TeamSidebar.vue'

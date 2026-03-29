@@ -1,4 +1,14 @@
 <script setup lang="ts">
+/**
+ * Main chat panel for the build workspace.
+ * Handles direct messages to individual clones and PM orchestration view.
+ * Parses [[TOOL_CALL:...]] and [[TOOL_RESULT:...]] markers for structured rendering.
+ * Renders assistant text as markdown. Supports streaming with AbortController cancellation.
+ *
+ * Props: activeThread, messages, streaming, streamingHandle, isThinking, inputText,
+ *        chatEndRef, candidateOf, roleOf, useGrok
+ * Emits: update:inputText, send, stop, keydown
+ */
 import { marked } from 'marked'
 import type { CandidateProfile, ChatMessage } from '~/composables/useApi'
 import type { ActiveThread } from '~/composables/useTeamChat'
@@ -78,6 +88,7 @@ function tryExtractJsonCommand(text: string): ContentSegment[] {
   return segments
 }
 
+// Split message content into typed segments (text / tool_call / tool_result)
 function parseMessageContent(content: string): ContentSegment[] {
   const segments: ContentSegment[] = []
   const regex = /\[\[(TOOL_CALL|TOOL_RESULT):(.*?)\]\]/gs
@@ -106,6 +117,7 @@ function parseMessageContent(content: string): ContentSegment[] {
   return segments
 }
 
+// Convert markdown to HTML via marked library
 function renderMarkdown(text: string): string {
   return marked.parse(text, { async: false }) as string
 }
@@ -124,6 +136,7 @@ const TOOL_ICONS: Record<string, string> = {
 }
 
 const expandedTools = ref<Set<number>>(new Set())
+// Toggle expanded view for tool call/result blocks
 function toggleExpand(idx: number) {
   if (expandedTools.value.has(idx)) expandedTools.value.delete(idx)
   else expandedTools.value.add(idx)

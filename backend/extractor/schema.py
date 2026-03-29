@@ -27,6 +27,7 @@ class CandidateExtract(BaseModel):
 # ── Grok client ───────────────────────────────────────────────────────────────
 
 def get_grok_client() -> OpenAI:
+    """Create an OpenAI-compatible client pointed at the xAI Grok API endpoint."""
     api_key = os.getenv("XAI_API_KEY")
     if not api_key:
         raise RuntimeError("XAI_API_KEY environment variable is not set")
@@ -81,10 +82,7 @@ Respond with a valid JSON object matching this schema exactly:
 
 
 def call_grok(content: str, role: Optional[str] = None) -> Optional[CandidateExtract]:
-    """
-    Send content to Grok with structured output extraction.
-    Uses json_object mode for broad compatibility, then validates with Pydantic.
-    """
+    """Send content to Grok with role-aware system prompt and return a validated CandidateExtract, or None on failure."""
     client = get_grok_client()
 
     role_context = ROLE_CONTEXT.get(role or "", "")
@@ -157,7 +155,7 @@ def generate_github_description(profile: dict, role: str) -> Optional[str]:
 
 
 def candidate_extract_to_profile(extract: CandidateExtract, source_url: str = "") -> dict:
-    """Convert a CandidateExtract into the same dict shape that github.py returns."""
+    """Convert a CandidateExtract Pydantic model to the flat profile dict shape used throughout the app."""
     return {
         "github_handle":  extract.name.lower().replace(" ", "-"),
         "name":           extract.name,

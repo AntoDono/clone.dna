@@ -73,6 +73,7 @@ def borrow_model_for_training():
 
 
 def _base_model_name() -> str:
+    """Return the configured base model name from BASE_MODEL env var, or the default Qwen model."""
     return os.getenv("BASE_MODEL", "Qwen/Qwen2.5-Coder-14B-Instruct-GPTQ-Int4")
 
 
@@ -187,7 +188,7 @@ def warmup_model() -> None:
 # ── System prompt fallback ────────────────────────────────────────────────────
 
 def _list_workspace(workspace_dir: str | None) -> str:
-    """Return a short directory listing of the agent workspace, or empty string."""
+    """Return a formatted directory listing of the agent workspace for use in system prompts."""
     if not workspace_dir:
         return ""
     ws = Path(workspace_dir)
@@ -207,6 +208,7 @@ def _build_system_prompt(
     profile: dict,
     workspace_dir: str | None = None,
 ) -> str:
+    """Construct a full system prompt for a candidate agent, combining their persona and current workspace state."""
     skills = ", ".join((profile.get("skills") or [])[:6])
     bio = (profile.get("bio") or "").strip()
     languages = ", ".join(list((profile.get("languages") or {}).keys())[:4])
@@ -257,7 +259,7 @@ def _build_system_prompt(
 # ── Message formatting ───────────────────────────────────────────────────────
 
 def _history_to_openai(system_prompt: str, history: list[dict]) -> list[dict]:
-    """Convert our {"sender":..., "content":...} history to OpenAI-style messages."""
+    """Convert a list of ChatMessage-style dicts to OpenAI message format (role/content)."""
     messages = [{"role": "system", "content": system_prompt}]
     for msg in history:
         role = "user" if msg.get("sender") == "user" else "assistant"
@@ -266,7 +268,7 @@ def _history_to_openai(system_prompt: str, history: list[dict]) -> list[dict]:
 
 
 def _format_prompt(tokenizer, messages: list[dict], tools: list[dict] | None = None) -> str:
-    """Use the tokenizer's chat template to format messages (with optional tools)."""
+    """Apply the tokenizer's chat template to a message list, with optional tool schema injection."""
     kwargs = {
         "conversation": messages,
         "tokenize": False,
@@ -302,7 +304,7 @@ _INLINE_JSON_RE = re.compile(
 
 
 def _parse_tool_calls(text: str) -> list[dict]:
-    """Extract tool call dicts from text containing <tool_call>...</tool_call> blocks."""
+    """Extract and parse tool call JSON objects from <tool_call>...</tool_call> tags in generated text."""
     results = []
     for match in _TOOL_CALL_RE.finditer(text):
         try:

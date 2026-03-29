@@ -1,3 +1,15 @@
+"""
+ORM models — Peewee models for all persistent entities.
+
+Schema:
+  Team        — a named hiring team with a fixed 4-slot layout (1 PM, 2 SWE, 1 Designer)
+  RoleSlot    — one role slot within a team; tracks fill status and slot index
+  Candidate   — a candidate assigned to a slot; stores full profile data, DNA clone
+                status (dna_cloned, dna_path, dna_cloned_at), and system_prompt
+  ChatMessage — a message in the build workspace; thread is a github_handle (DM)
+                or "orchestrate" (PM orchestration)
+"""
+
 import json
 from datetime import datetime
 from peewee import (
@@ -18,6 +30,8 @@ class BaseModel(Model):
 
 
 class Team(BaseModel):
+    """A hiring team with a fixed 4-slot layout (1 PM, 2 SWE, 1 Designer)."""
+
     name = CharField()
     discord_pair_code = CharField(null=True)
     created_at = DateTimeField(default=datetime.utcnow)
@@ -33,6 +47,8 @@ class Team(BaseModel):
 
 
 class RoleSlot(BaseModel):
+    """A role slot within a team (pm, swe, or designer) with fill status tracking."""
+
     team = ForeignKeyField(Team, backref="slots", on_delete="CASCADE")
     role = CharField()        # 'pm' | 'swe' | 'designer'
     slot_index = IntegerField(default=0)
@@ -53,6 +69,8 @@ class RoleSlot(BaseModel):
 
 
 class Candidate(BaseModel):
+    """A candidate assigned to a role slot with full profile data and DNA clone status."""
+
     role_slot = ForeignKeyField(RoleSlot, backref="candidates", null=True, on_delete="SET NULL")
     github_handle = CharField()
     name = CharField(null=True)
@@ -100,6 +118,8 @@ class Candidate(BaseModel):
 
 
 class ChatMessage(BaseModel):
+    """A message in the build workspace; thread is a github_handle (DM) or 'orchestrate'."""
+
     team       = ForeignKeyField(Team, backref="messages", on_delete="CASCADE")
     thread     = CharField()     # github_handle for DMs, "orchestrate" for PM orchestration
     sender     = CharField()     # "user" | github_handle | "orchestrate"
@@ -117,6 +137,8 @@ class ChatMessage(BaseModel):
 
 
 class DiscordPairing(BaseModel):
+    """Pairs a Discord user to a team for workspace access."""
+
     discord_user_id = CharField(unique=True)
     team = ForeignKeyField(Team, backref="discord_pairings", on_delete="CASCADE")
     paired_at = DateTimeField(default=datetime.utcnow)

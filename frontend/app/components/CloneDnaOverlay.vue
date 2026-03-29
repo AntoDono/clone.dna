@@ -1,4 +1,14 @@
 <script setup lang="ts">
+/**
+ * Full-screen overlay for live DNA cloning progress.
+ * Connects to SSE stream at /teams/{teamId}/clone-dna/stream.
+ * Tracks per-candidate state machine: waiting → collecting → generating → training → saving → done/error.
+ * Displays live loss values, step progress, and pair counts during training.
+ * Supports emergency calibration mode (no GPU required) via ?emergency_calibration=1.
+ *
+ * Props: teamId (number), slots (RoleSlot[]), emergencyCalibration (boolean)
+ * Emits: done
+ */
 import type { RoleSlot, CandidateProfile } from '~/composables/useApi'
 
 const props = defineProps<{

@@ -1,4 +1,9 @@
 <script setup lang="ts">
+/**
+ * Home page — list all teams and create new ones.
+ * Teams display slot fill status. Creating a team redirects to the team page
+ * with ?headhunt=true to auto-open the headhunt overlay.
+ */
 import type { Team } from '~/composables/useApi'
 
 const api = useApi()

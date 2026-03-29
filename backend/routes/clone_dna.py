@@ -1,3 +1,17 @@
+"""
+Clone DNA router — SSE stream for the full .dna minting pipeline.
+
+Runs four sequential stages per candidate:
+  1. Collecting  — fetches source code from the candidate's top GitHub repos
+  2. Generating  — calls Grok-4 to produce (instruction, response) training pairs;
+                   results cached in GROK_CACHE_DIR to skip the API on reruns
+  3. Training    — runs QLoRA fine-tuning; concurrency bounded by NUM_OF_PARALLEL_TRAINING
+  4. Saving      — writes the .dna block to dnas/{team_id}/{handle}/
+
+Emergency calibration (?emergency_calibration=1): emits a simulated training stream
+without real training — for demos without GPU access.
+"""
+
 import asyncio
 import json
 import logging
@@ -19,10 +33,12 @@ _GROK_CACHE_DIR = Path(os.getenv("GROK_CACHE_DIR", "grok_cache"))
 
 
 def _cache_path(handle: str) -> Path:
+    """Return the Grok cache file path for a given candidate handle."""
     return _GROK_CACHE_DIR / f"{handle}.json"
 
 
 def _load_grok_cache(handle: str) -> dict | None:
+    """Load cached training pairs and system prompt from disk; return None if cache is missing or malformed."""
     path = _cache_path(handle)
     try:
         if path.exists():
@@ -36,6 +52,7 @@ def _save_grok_cache(
     handle: str, pairs: list[dict], system_prompt: str,
     personality_profile: dict | None = None,
 ) -> None:
+    """Persist training pairs and system prompt to the Grok cache to skip the API on reruns."""
     try:
         _GROK_CACHE_DIR.mkdir(parents=True, exist_ok=True)
         payload: dict = {
@@ -164,6 +181,7 @@ async def _emergency_skip_candidate(candidate: dict, team_id: int, dnas_root: Pa
 
 @router.get("/teams/{team_id}/clone-dna/stream")
 async def clone_dna_stream(team_id: int, emergency_calibration: int = 0):
+    """Stream the complete .dna minting pipeline over SSE: collect code → generate pairs → train LoRA → save block."""
     try:
         team = Team.get_by_id(team_id)
     except Team.DoesNotExist:

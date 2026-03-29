@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _workspace_listing(workspace_dir: str | None, limit: int = 30) -> str:
-    """Return a compact listing of the workspace for inclusion in prompts."""
+    """Return a compact comma-separated listing of workspace entries for inclusion in orchestration prompts."""
     if not workspace_dir:
         return ""
     ws = Path(workspace_dir)

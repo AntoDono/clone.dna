@@ -1,3 +1,15 @@
+"""
+Build router — post-clone chat and PM orchestration over SSE.
+
+Endpoints:
+  POST /chat        — DM a single cloned candidate; hot-swaps their LoRA adapter
+                      and runs the tool-use agent loop (up to 10 iterations).
+  POST /compare     — side-by-side: same prompt through base model vs adapter.
+  POST /orchestrate — PM generates a plan → Grok assigns tasks → each specialist
+                      responds sequentially with shared workspace tool access.
+  GET  /messages    — full message history for the team's build workspace.
+"""
+
 import asyncio
 import json
 import os
@@ -20,6 +32,7 @@ _WORKSPACE_ROOT = Path(os.getenv("AGENT_WORKSPACE_DIR", "agent-workspace"))
 
 
 def _workspace_for_team(team_id: int) -> str:
+    """Return the sandboxed workspace directory path for a team, creating it if necessary."""
     ws = _WORKSPACE_ROOT / str(team_id)
     ws.mkdir(parents=True, exist_ok=True)
     return str(ws)
@@ -44,6 +57,7 @@ class BuildCompareRequest(PydanticModel):
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _get_candidate_for_team(team_id: int, handle: str) -> Candidate:
+    """Fetch a Candidate by GitHub handle, verifying they belong to the given team. Raises 404 if not found."""
     result = (
         Candidate
         .select(Candidate, RoleSlot)
@@ -58,6 +72,7 @@ def _get_candidate_for_team(team_id: int, handle: str) -> Candidate:
 
 
 def _sse(data: dict) -> str:
+    """Format a dict as an SSE data line for StreamingResponse."""
     return f"data: {json.dumps(data)}\n\n"
 
 
@@ -65,6 +80,7 @@ def _sse(data: dict) -> str:
 
 @router.get("/teams/{team_id}/build/messages")
 def get_build_messages(team_id: int, thread: str):
+    """Return full message history for a team's build workspace, optionally filtered by thread."""
     try:
         Team.get_by_id(team_id)
     except Team.DoesNotExist:
@@ -82,6 +98,7 @@ def get_build_messages(team_id: int, thread: str):
 
 @router.post("/teams/{team_id}/build/chat")
 async def build_chat(team_id: int, body: BuildChatRequest):
+    """Stream a direct message to a cloned candidate using their LoRA adapter and the tool-use agent loop."""
     try:
         Team.get_by_id(team_id)
     except Team.DoesNotExist:
@@ -243,6 +260,7 @@ async def build_compare(team_id: int, body: BuildCompareRequest):
 
 @router.post("/teams/{team_id}/build/orchestrate")
 async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
+    """Stream PM orchestration: PM generates a plan, Grok assigns tasks to specialists, each specialist responds sequentially."""
     try:
         team = Team.get_by_id(team_id)
     except Team.DoesNotExist:

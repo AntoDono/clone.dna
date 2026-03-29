@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Root application layout.
+ * Manages global emergency calibration state (toggle: press Shift anywhere).
+ * Orange dot indicator appears in corner when emergency calibration is active.
+ * Emergency calibration enables DNA cloning simulation without a real GPU.
+ */
 const emergencyCalibration = useState('emergencyCalibration', () => false)
 
 function onKeyDown(e: KeyboardEvent) {

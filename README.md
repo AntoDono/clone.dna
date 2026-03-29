@@ -74,7 +74,6 @@ GitHub / Website / Resume
                 PM orchestration: PM plans → Grok assigns → specialists respond
 ```
 
-&#83;&#99;&#111;&#114;&#101;&#58;&#32;&#55;&#55;
 ---
 
 ## Prerequisites
@@ -251,6 +250,20 @@ Every `.dna` block ships with its exact training config for full reproducibility
 - **Target modules:** `q_proj`, `k_proj`, `v_proj`, `o_proj`
 - **Optimizer:** AdamW (lr=2e-4) or paged_adamw_8bit (QLoRA)
 - **Training:** effective batch_size=8 (2×4 gradient accumulation), 2 epochs, max_seq_len=2048
+- **Mixed data:** candidate pairs + 50% alpaca-cleaned (catastrophic forgetting prevention) + 24 tool-use examples
+
+---
+
+## Documentation
+
+| Document | Description |
+|---|---|
+| [`backend/README.md`](backend/README.md) | Full API reference, training pipeline, SSE event schemas, data model |
+| [`frontend/README.md`](frontend/README.md) | Pages, components with props/emits, composables, SSE event types |
+| [`backend/trainer/README.md`](backend/trainer/README.md) | Deep dive: Grok pair generation, QLoRA training, inference engine, tool-use loop, orchestration |
+| [`backend/extractor/README.md`](backend/extractor/README.md) | GitHub / website / resume extraction, `CandidateExtract` schema, role-aware prompts |
+| [`docs/dna-format.md`](docs/dna-format.md) | `.dna` block format spec: all files, JSON schemas, PEFT/vLLM loading, versioning |
+| [`backend/tests/README.md`](backend/tests/README.md) | Test suite: what each file covers, how to run |
 
 ---
 

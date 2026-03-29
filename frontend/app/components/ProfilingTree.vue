@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Candidate profile card with collapsed and expanded views.
+ * Collapsed: name, avatar, GitHub handle, follower count, top 2 skills.
+ * Expanded: bio, soft skill badges (amber), technical skill badges (blue),
+ * top 4 repositories with star counts, programming language bar charts.
+ *
+ * Props: candidate (CandidateProfile), expanded (boolean)
+ */
 import type { CandidateProfile } from '~/composables/useApi'
 
 const props = defineProps<{
@@ -6,6 +14,7 @@ const props = defineProps<{
   expanded: boolean
 }>()
 
+// Abbreviate large numbers (e.g. 12400 → "12.4k")
 function fmt(n: number) {
   return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n)
 }
