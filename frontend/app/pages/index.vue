@@ -53,7 +53,7 @@ const ROLE_LABEL: Record<string, string> = { pm: 'PM', swe: 'SWE', designer: 'De
 
 const steps = [
   { num: '01', label: 'Headhunt', desc: 'AI scans GitHub for candidates matching each role.' },
-  { num: '02', label: 'Extract', desc: 'Grok-4 reads their public code and generates training pairs.' },
+  { num: '02', label: 'Extract', desc: 'AI reads their public code and generates training pairs.' },
   { num: '03', label: 'Train', desc: 'QLoRA fine-tunes a LoRA adapter encoding their style.' },
   { num: '04', label: 'Deploy', desc: 'Chat with the clone or orchestrate a full AI team.' },
 ]
@@ -85,7 +85,7 @@ onMounted(() => {
     <!-- Hero -->
     <section class="hero">
       <div class="hero-inner">
-        <div class="hero-badge font-mono">Grok-4 · QLoRA · PEFT hot-swap</div>
+        <div class="hero-badge font-mono">LoRA · QLoRA · PEFT hot-swap</div>
         <h1 class="hero-headline font-display">
           Hire the Mind.<br /><em>Not the Body.</em>
         </h1>

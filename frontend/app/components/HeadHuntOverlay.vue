@@ -219,22 +219,22 @@ onUnmounted(() => es?.close())
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex flex-col bg-slate-950 overflow-hidden">
+  <div class="fixed inset-0 z-50 flex flex-col overflow-hidden bg-[var(--bg)]">
 
     <!-- ── Header ─────────────────────────────────────────────────────────── -->
-    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-slate-800">
+    <div class="flex-shrink-0 flex items-center justify-between px-8 py-5 border-b border-[var(--border)] bg-[var(--bg-card)]">
       <div class="flex items-center gap-4">
-        <span class="text-lg font-bold text-white tracking-tight">Clone.dna</span>
-        <span class="text-slate-600">|</span>
-        <span v-if="phase === 'hunting'" class="text-slate-300 text-sm font-medium flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-blue-400 animate-pulse"></span>
+        <span class="text-lg font-bold text-[var(--text-primary)] tracking-tight">Clone.dna</span>
+        <span class="text-[var(--text-muted)]">|</span>
+        <span v-if="phase === 'hunting'" class="text-[var(--text-secondary)] text-sm font-medium flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
           Head Hunting Candidates<span class="dots-anim"></span>
         </span>
-        <span v-else-if="phase === 'selecting'" class="text-white text-sm font-semibold">
+        <span v-else-if="phase === 'selecting'" class="text-[var(--text-primary)] text-sm font-semibold">
           Build Your Team
         </span>
-        <span v-else class="text-slate-300 text-sm font-medium flex items-center gap-2">
-          <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+        <span v-else class="text-[var(--text-secondary)] text-sm font-medium flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-[var(--accent)] animate-pulse"></span>
           Saving selections<span class="dots-anim"></span>
         </span>
       </div>
@@ -245,24 +245,24 @@ onUnmounted(() => es?.close())
           <span
             v-for="role in ROLES"
             :key="role.key"
-            class="text-xs font-medium px-2 py-1 border transition-colors"
+            class="text-xs font-medium px-2 py-1 border transition-colors rounded"
             :class="selectedCount(role.key) === role.need
-              ? 'border-green-600 text-green-400 bg-green-950/50'
-              : 'border-slate-700 text-slate-500'"
+              ? 'border-emerald-500 text-[var(--accent-text)] bg-[var(--accent-light)]'
+              : 'border-[var(--border)] text-[var(--text-muted)] bg-[var(--bg-subtle)]'"
           >
             {{ role.badge }} {{ selectedCount(role.key) }}/{{ role.need }}
           </span>
         </template>
         <!-- Cache indicator + refetch -->
         <template v-if="phase === 'selecting'">
-          <span v-if="fromCache" class="text-xs text-slate-600 border border-slate-800 px-2 py-1">
+          <span v-if="fromCache" class="text-xs text-[var(--text-muted)] border border-[var(--border)] px-2 py-1 rounded bg-[var(--bg-subtle)]">
             cached
           </span>
           <button
-            class="text-xs border px-3 py-1 transition-colors disabled:opacity-40"
+            class="text-xs border px-3 py-1 transition-colors rounded disabled:opacity-40"
             :class="isRefetching
-              ? 'border-slate-700 text-slate-600 cursor-not-allowed'
-              : 'border-slate-700 text-slate-400 hover:border-blue-600 hover:text-blue-400'"
+              ? 'border-[var(--border)] text-[var(--text-muted)] cursor-not-allowed bg-[var(--bg-subtle)]'
+              : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-blue-500 hover:text-blue-700 bg-[var(--bg-card)]'"
             :disabled="isRefetching"
             @click="refetchCandidates"
           >
@@ -272,20 +272,20 @@ onUnmounted(() => es?.close())
         <!-- Score for fit button (only when candidates are loaded) -->
         <template v-if="phase === 'selecting'">
           <button
-            class="text-xs border px-3 py-1 transition-colors"
+            class="text-xs border px-3 py-1 transition-colors rounded"
             :class="Object.keys(fitScores).length
-              ? 'border-green-600 text-green-400'
-              : 'border-slate-700 text-slate-400 hover:border-violet-500 hover:text-violet-400'"
+              ? 'border-emerald-500 text-[var(--accent-text)] bg-[var(--accent-light)]'
+              : 'border-[var(--border)] text-[var(--text-secondary)] hover:border-[var(--accent)] hover:text-[var(--accent-text)] bg-[var(--bg-card)]'"
             @click="showScorePanel = true"
           >
             {{ Object.keys(fitScores).length ? '✓ Scored' : '◈ Score for Fit' }}
           </button>
         </template>
-        <span v-if="streamError" class="text-xs text-red-400 max-w-sm truncate" :title="streamError">
+        <span v-if="streamError" class="text-xs text-[var(--red)] max-w-sm truncate" :title="streamError">
           ⚠ {{ streamError }}
         </span>
         <button
-          class="text-xs text-slate-600 hover:text-slate-300 transition-colors ml-2"
+          class="text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors ml-2"
           @click="skipOverlay"
         >
           Skip →
@@ -294,32 +294,32 @@ onUnmounted(() => es?.close())
     </div>
 
     <!-- ── Three columns ──────────────────────────────────────────────────── -->
-    <div class="flex-1 grid grid-cols-3 divide-x divide-slate-800 min-h-0">
+    <div class="flex-1 grid grid-cols-3 divide-x divide-[var(--border)] min-h-0">
       <div
         v-for="role in ROLES"
         :key="role.key"
         class="flex flex-col min-h-0"
       >
         <!-- Column header -->
-        <div class="flex-shrink-0 px-6 py-4 border-b border-slate-800">
+        <div class="flex-shrink-0 px-6 py-4 border-b border-[var(--border)] bg-[var(--bg-card)]">
           <div class="flex items-center justify-between mb-3">
             <div>
               <p
                 class="text-xs font-bold uppercase tracking-widest"
                 :class="{
-                  'text-amber-400': role.key === 'pm',
-                  'text-blue-400': role.key === 'swe',
-                  'text-purple-400': role.key === 'designer',
+                  'text-amber-700': role.key === 'pm',
+                  'text-blue-700': role.key === 'swe',
+                  'text-purple-700': role.key === 'designer',
                 }"
               >{{ role.badge }}</p>
-              <p class="text-slate-500 text-xs mt-0.5">{{ role.label }}</p>
+              <p class="text-[var(--text-muted)] text-xs mt-0.5">{{ role.label }}</p>
             </div>
-            <span class="text-xs tabular-nums text-slate-600">
-              {{ (pool[role.key] ?? []).length }}<span class="text-slate-700">/5</span>
+            <span class="text-xs tabular-nums text-[var(--text-secondary)]">
+              {{ (pool[role.key] ?? []).length }}<span class="text-[var(--text-muted)]">/5</span>
             </span>
           </div>
           <!-- Progress bar -->
-          <div class="h-px bg-slate-800 overflow-hidden">
+          <div class="h-px bg-[var(--border)] overflow-hidden">
             <div
               class="h-full transition-all duration-500 ease-out"
               :class="{
@@ -333,22 +333,22 @@ onUnmounted(() => es?.close())
         </div>
 
         <!-- Candidate list -->
-        <div class="flex-1 overflow-y-auto p-3">
+        <div class="flex-1 overflow-y-auto p-3 bg-[var(--bg)]">
           <TransitionGroup name="slide-up" tag="div" class="space-y-2">
             <component
               :is="phase === 'selecting' ? 'button' : 'div'"
               v-for="candidate in pool[role.key]"
               :key="candidate.github_handle"
-              class="w-full text-left p-3 border transition-colors"
+              class="w-full text-left p-3 border transition-colors rounded"
               :class="isSelected(role.key, candidate.github_handle)
                 ? {
-                    'border-amber-500 bg-amber-950/40': role.key === 'pm',
-                    'border-blue-500 bg-blue-950/40': role.key === 'swe',
-                    'border-purple-500 bg-purple-950/40': role.key === 'designer',
+                    'border-amber-500 bg-amber-50 shadow-sm': role.key === 'pm',
+                    'border-blue-500 bg-blue-50 shadow-sm': role.key === 'swe',
+                    'border-purple-500 bg-purple-50 shadow-sm': role.key === 'designer',
                   }
                 : phase === 'selecting'
-                  ? 'border-slate-800 bg-slate-900/60 hover:border-slate-600 cursor-pointer'
-                  : 'border-slate-800 bg-slate-900/60'"
+                  ? 'border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--border-mid)] hover:bg-[var(--bg-hover)] cursor-pointer shadow-sm'
+                  : 'border-[var(--border)] bg-[var(--bg-card)] shadow-sm'"
               @click="toggle(role.key, candidate.github_handle)"
             >
               <div class="flex items-center gap-2.5">
@@ -356,29 +356,29 @@ onUnmounted(() => es?.close())
                   v-if="candidate.avatar_url"
                   :src="candidate.avatar_url"
                   :alt="candidate.name"
-                  class="w-7 h-7 flex-shrink-0 object-cover grayscale"
+                  class="w-7 h-7 flex-shrink-0 object-cover grayscale border border-[var(--border)]"
                   :class="isSelected(role.key, candidate.github_handle) ? 'grayscale-0' : ''"
                 />
                 <div
                   v-else
-                  class="w-7 h-7 flex-shrink-0 bg-slate-800 flex items-center justify-center text-xs font-bold text-slate-400"
+                  class="w-7 h-7 flex-shrink-0 bg-[var(--bg-subtle)] border border-[var(--border)] flex items-center justify-center text-xs font-bold text-[var(--text-muted)]"
                 >
                   {{ (candidate.name ?? '?')[0]?.toUpperCase() }}
                 </div>
                 <div class="min-w-0 flex-1">
                   <p
                     class="text-sm font-medium truncate transition-colors"
-                    :class="isSelected(role.key, candidate.github_handle) ? 'text-white' : 'text-slate-400'"
+                    :class="isSelected(role.key, candidate.github_handle) ? 'text-[var(--text-primary)]' : 'text-[var(--text-secondary)]'"
                   >{{ candidate.name || candidate.github_handle }}</p>
-                  <p class="text-xs text-slate-600 truncate">{{ candidate.location || `@${candidate.github_handle}` }}</p>
+                  <p class="text-xs text-[var(--text-muted)] truncate">{{ candidate.location || `@${candidate.github_handle}` }}</p>
                 </div>
                 <span
                   v-if="isSelected(role.key, candidate.github_handle)"
                   class="flex-shrink-0 text-xs font-bold"
                   :class="{
-                    'text-amber-400': role.key === 'pm',
-                    'text-blue-400': role.key === 'swe',
-                    'text-purple-400': role.key === 'designer',
+                    'text-amber-700': role.key === 'pm',
+                    'text-blue-700': role.key === 'swe',
+                    'text-purple-700': role.key === 'designer',
                   }"
                 >✓</span>
               </div>
@@ -388,23 +388,23 @@ onUnmounted(() => es?.close())
                 <span
                   v-for="skill in candidate.skills.slice(0, 3)"
                   :key="skill"
-                  class="text-xs border border-slate-700 text-slate-600 px-1.5 py-0.5"
+                  class="text-xs border border-[var(--border)] text-[var(--text-muted)] bg-[var(--bg-subtle)] px-1.5 py-0.5 rounded"
                 >{{ skill }}</span>
               </div>
 
               <!-- Fit score badge -->
               <div v-if="fitScore(candidate.github_handle)" class="mt-2 flex items-center gap-2">
                 <span
-                  class="text-xs font-bold px-2 py-0.5 border"
+                  class="text-xs font-bold px-2 py-0.5 border rounded"
                   :class="fitScore(candidate.github_handle)!.overall_score >= 80
-                    ? 'border-green-600 text-green-400 bg-green-950/40'
+                    ? 'border-emerald-500 text-[var(--accent-text)] bg-[var(--accent-light)]'
                     : fitScore(candidate.github_handle)!.overall_score >= 60
-                      ? 'border-amber-600 text-amber-400 bg-amber-950/40'
-                      : 'border-slate-600 text-slate-400'"
+                      ? 'border-amber-600 text-amber-800 bg-amber-50'
+                      : 'border-[var(--border)] text-[var(--text-muted)] bg-[var(--bg-subtle)]'"
                 >
                   {{ fitScore(candidate.github_handle)!.overall_score }}/100
                 </span>
-                <span class="text-xs text-slate-600 truncate">{{ fitScore(candidate.github_handle)!.reasoning }}</span>
+                <span class="text-xs text-[var(--text-muted)] truncate">{{ fitScore(candidate.github_handle)!.reasoning }}</span>
               </div>
             </component>
           </TransitionGroup>
@@ -414,7 +414,7 @@ onUnmounted(() => es?.close())
             <div
               v-for="i in Math.max(0, 5 - (pool[role.key] ?? []).length)"
               :key="`sk-${i}`"
-              class="h-11 border border-slate-800/40 bg-slate-900/20 animate-pulse"
+              class="h-11 border border-[var(--border)] bg-[var(--bg-subtle)] rounded animate-pulse"
             ></div>
           </div>
         </div>
@@ -425,28 +425,28 @@ onUnmounted(() => es?.close())
     <Transition name="fade">
       <div
         v-if="phase !== 'hunting'"
-        class="flex-shrink-0 border-t border-slate-800 bg-slate-900/80 px-8 py-4 flex items-center justify-between"
+        class="flex-shrink-0 border-t border-[var(--border)] bg-[var(--bg-card)] px-8 py-4 flex items-center justify-between shadow-[0_-4px_12px_rgba(28,24,17,0.06)]"
       >
         <div class="text-sm">
-          <span v-if="!canConfirm" class="text-slate-500">
+          <span v-if="!canConfirm" class="text-[var(--text-muted)]">
             Select 1 PM · 2 SWE · 1 Designer to confirm
           </span>
-          <span v-else class="text-green-400 font-medium">All slots ready</span>
-          <p v-if="confirmError" class="text-red-400 text-xs mt-0.5">{{ confirmError }}</p>
+          <span v-else class="text-[var(--accent-text)] font-medium">All slots ready</span>
+          <p v-if="confirmError" class="text-[var(--red)] text-xs mt-0.5">{{ confirmError }}</p>
         </div>
         <div class="flex items-center gap-4">
           <button
-            class="text-sm text-slate-500 hover:text-slate-300 transition-colors"
+            class="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
             :disabled="phase === 'confirming'"
             @click="skipOverlay"
           >
             Fill manually later
           </button>
           <button
-            class="px-6 py-2 text-sm font-semibold transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+            class="px-6 py-2 text-sm font-semibold rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed border"
             :class="canConfirm
-              ? 'bg-blue-600 text-white hover:bg-blue-500'
-              : 'bg-slate-800 text-slate-500'"
+              ? 'bg-[var(--accent)] text-white border-[var(--accent)] hover:opacity-95'
+              : 'bg-[var(--bg-subtle)] text-[var(--text-muted)] border-[var(--border)]'"
             :disabled="!canConfirm || phase === 'confirming'"
             @click="confirmSelections"
           >
@@ -460,30 +460,30 @@ onUnmounted(() => es?.close())
     <Transition name="fade">
       <div
         v-if="showScorePanel"
-        class="absolute inset-0 bg-slate-950/80 flex items-center justify-center z-10"
+        class="absolute inset-0 bg-[rgba(28,24,17,0.35)] backdrop-blur-sm flex items-center justify-center z-10 p-6"
         @click.self="showScorePanel = false"
       >
-        <div class="bg-slate-900 border border-slate-700 w-full max-w-lg p-6 space-y-4">
+        <div class="bg-[var(--bg-card)] border border-[var(--border)] w-full max-w-lg p-6 space-y-4 rounded shadow-[var(--shadow-md)]">
           <div class="flex items-center justify-between">
-            <p class="text-white font-semibold">Score Candidates for Fit</p>
-            <button class="text-slate-500 hover:text-white" @click="showScorePanel = false">✕</button>
+            <p class="text-[var(--text-primary)] font-semibold">Score Candidates for Fit</p>
+            <button class="text-[var(--text-muted)] hover:text-[var(--text-primary)]" @click="showScorePanel = false">✕</button>
           </div>
-          <p class="text-slate-500 text-xs">Paste a job description — Grok will score all candidates across technical fit, domain expertise, and seniority.</p>
+          <p class="text-[var(--text-muted)] text-xs">Paste a job description — AI will score all candidates across technical fit, domain expertise, and seniority.</p>
           <textarea
             v-model="jdInput"
             placeholder="We're hiring a senior backend engineer who lives in distributed systems, has built event-driven microservices, and has a strong open source presence..."
-            class="w-full h-36 bg-slate-950 border border-slate-700 focus:border-violet-500 text-sm text-slate-300 placeholder-slate-600 p-3 outline-none resize-none"
+            class="input w-full h-36 text-sm resize-none"
           />
-          <p v-if="scoreError" class="text-red-400 text-xs">{{ scoreError }}</p>
+          <p v-if="scoreError" class="text-[var(--red)] text-xs">{{ scoreError }}</p>
           <div class="flex justify-end gap-3">
-            <button class="text-sm text-slate-500 hover:text-white transition-colors" @click="showScorePanel = false">Cancel</button>
+            <button class="text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors" @click="showScorePanel = false">Cancel</button>
             <button
-              class="px-5 py-2 text-sm font-semibold transition-colors disabled:opacity-40"
-              :class="scoring ? 'bg-slate-700 text-slate-400' : 'bg-violet-600 text-white hover:bg-violet-500'"
+              type="button"
+              class="btn btn-primary text-sm"
               :disabled="scoring"
               @click="runFitScore"
             >
-              {{ scoring ? 'Scoring with Grok...' : 'Score All Candidates →' }}
+              {{ scoring ? 'Scoring candidates...' : 'Score All Candidates →' }}
             </button>
           </div>
         </div>
@@ -494,12 +494,12 @@ onUnmounted(() => es?.close())
     <Transition name="fade">
       <div
         v-if="phase === 'confirming'"
-        class="absolute inset-0 bg-slate-950/70 flex items-center justify-center"
+        class="absolute inset-0 bg-[rgba(28,24,17,0.35)] backdrop-blur-sm flex items-center justify-center"
       >
-        <div class="text-center space-y-3">
-          <div class="w-10 h-10 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p class="text-white font-semibold">Building your team</p>
-          <p class="text-slate-500 text-sm">Fetching full profiles<span class="dots-anim"></span></p>
+        <div class="text-center space-y-3 bg-[var(--bg-card)] border border-[var(--border)] rounded-lg px-10 py-8 shadow-[var(--shadow-md)]">
+          <div class="w-10 h-10 border-2 border-[var(--accent)] border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p class="text-[var(--text-primary)] font-semibold">Building your team</p>
+          <p class="text-[var(--text-muted)] text-sm">Fetching full profiles<span class="dots-anim"></span></p>
         </div>
       </div>
     </Transition>

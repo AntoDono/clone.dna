@@ -69,25 +69,25 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen bg-slate-950 flex flex-col">
+  <div class="h-screen bg-[var(--bg)] flex flex-col">
 
     <!-- Header -->
-    <header class="flex-shrink-0 bg-slate-900/80 border-b border-slate-800 px-6 py-4 flex items-center justify-between backdrop-blur">
+    <header class="flex-shrink-0 bg-[rgba(250,248,244,0.92)] border-b border-[var(--border)] px-6 py-4 flex items-center justify-between backdrop-blur-md">
       <div class="flex items-center gap-4">
-        <NuxtLink :to="`/teams/${teamId}`" class="text-slate-500 hover:text-slate-300 transition-colors text-sm">
+        <NuxtLink :to="`/teams/${teamId}`" class="text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors text-sm">
           ← {{ team?.name ?? 'Team' }}
         </NuxtLink>
-        <span class="text-slate-700">|</span>
-        <span class="text-white font-semibold text-sm">Build with Team</span>
+        <span class="text-[var(--border-mid)]">|</span>
+        <span class="text-[var(--text-primary)] font-semibold text-sm">Build with Team</span>
       </div>
       <div class="flex items-center gap-2">
-        <span class="text-xs text-slate-600">{{ clonedCandidates.length }} DNA blocks loaded</span>
+        <span class="text-xs text-[var(--text-muted)]">{{ clonedCandidates.length }} DNA blocks loaded</span>
       </div>
     </header>
 
     <!-- Loading / Error -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center text-slate-500 text-sm">Loading team...</div>
-    <div v-else-if="pageError" class="flex-1 flex items-center justify-center text-red-400 text-sm">{{ pageError }}</div>
+    <div v-if="loading" class="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm">Loading team...</div>
+    <div v-else-if="pageError" class="flex-1 flex items-center justify-center text-[var(--red)] text-sm">{{ pageError }}</div>
 
     <!-- Main layout -->
     <div v-else class="flex-1 flex overflow-hidden min-h-0">

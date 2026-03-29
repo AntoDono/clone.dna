@@ -69,7 +69,7 @@ function toggle() {
         </ul>
 
         <div class="brand-footer">
-          <span class="font-mono text-xs" style="color:var(--text-muted)">LoRA · Grok-4 · QLoRA · PEFT</span>
+          <span class="font-mono text-xs" style="color:var(--text-muted)">LoRA · QLoRA · PEFT</span>
         </div>
       </div>
     </div>
@@ -148,7 +148,7 @@ export default {
           desc: 'Portable LoRA adapters encoding a developer\'s coding style and architecture patterns.',
         },
         {
-          label: 'Grok-4 Teacher',
+          label: 'AI Teacher',
           desc: 'Reads public repos and generates high-quality instruction–response training pairs.',
         },
         {
@@ -157,7 +157,7 @@ export default {
         },
         {
           label: 'PM Orchestration',
-          desc: 'PM plans a task, Grok assigns sub-tasks, specialists respond with tool access.',
+          desc: 'PM plans a task, AI assigns sub-tasks, specialists respond with tool access.',
         },
       ],
     }
