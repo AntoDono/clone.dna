@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_DNAS_ROOT = Path(os.getenv("DNAS_DIR", "dnas"))
 
 TOOL_SCHEMAS = [
     {
@@ -93,6 +96,29 @@ TOOL_SCHEMAS = [
                     "command": {"type": "string", "description": "Shell command to execute"},
                 },
                 "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "search_registry",
+            "description": (
+                "Search the DNA talent registry for expert .dna blocks by skills or domain. "
+                "Returns matching blocks with their expertise domains, eval scores, and paths."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "skills": {
+                        "type": "string",
+                        "description": "Comma-separated skill keywords (e.g. 'python,backend,distributed-systems')",
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "Domain keyword to filter by (e.g. 'backend', 'ml', 'frontend')",
+                    },
+                },
             },
         },
     },
@@ -189,6 +215,60 @@ def _exec_run_command(workspace: Path, args: dict) -> str:
         return f"Error: {e}"
 
 
+def _exec_search_registry(_workspace: Path, args: dict) -> str:
+    """Query the .dna registry for blocks matching skills/domain filters."""
+    skills_raw = args.get("skills", "")
+    domain_raw = args.get("domain", "")
+    skill_terms = [s.strip().lower() for s in skills_raw.split(",") if s.strip()] if skills_raw else []
+    domain_term = domain_raw.strip().lower() if domain_raw else None
+
+    results: list[dict] = []
+    if not _DNAS_ROOT.exists():
+        return json.dumps({"total": 0, "blocks": [], "note": "No DNA blocks directory found."})
+
+    for team_dir in sorted(_DNAS_ROOT.iterdir()):
+        if not team_dir.is_dir():
+            continue
+        for handle_dir in sorted(team_dir.iterdir()):
+            if not handle_dir.is_dir():
+                continue
+            if (handle_dir / "revoked.json").exists():
+                continue
+            manifest_path = handle_dir / "manifest.json"
+            if not manifest_path.exists():
+                continue
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except Exception:
+                continue
+
+            candidate = manifest.get("candidate", {})
+            domains = [d.lower() for d in candidate.get("expertise_domains", [])]
+            tags = [t.lower() for t in manifest.get("tags", [])]
+            handle = handle_dir.name.lower()
+            searchable = domains + tags + [handle]
+
+            if skill_terms and not any(
+                term in field for term in skill_terms for field in searchable
+            ):
+                continue
+            if domain_term and not any(domain_term in field for field in searchable):
+                continue
+
+            results.append({
+                "team_id": team_dir.name,
+                "handle": handle_dir.name,
+                "name": manifest.get("name"),
+                "expertise_domains": candidate.get("expertise_domains", []),
+                "tags": manifest.get("tags", []),
+                "base_model": manifest.get("base_model"),
+                "eval_summary": manifest.get("eval_summary", {}),
+                "path": str(handle_dir),
+            })
+
+    return json.dumps({"total": len(results), "blocks": results}, indent=2)
+
+
 _EXECUTORS = {
     "write_file": _exec_write_file,
     "read_file": _exec_read_file,
@@ -196,6 +276,7 @@ _EXECUTORS = {
     "list_files": _exec_list_files,
     "edit_file": _exec_edit_file,
     "run_command": _exec_run_command,
+    "search_registry": _exec_search_registry,
 }
 
 

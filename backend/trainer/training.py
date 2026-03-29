@@ -30,6 +30,8 @@ import json
 import logging
 import math
 import os
+import re
+import statistics
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -39,6 +41,104 @@ from .tool_examples import TOOL_USE_EXAMPLES
 logger = logging.getLogger(__name__)
 
 BASE_INSTRUCT_RATIO = 0.5
+
+
+def compute_style_metrics(pairs: list[dict]) -> dict:
+    """Compute lightweight style-consistency fingerprints from candidate code pairs.
+
+    Analyzes the *response* (code) side of each training pair and produces
+    heuristic metrics that characterize the developer's coding style:
+      - naming_convention: dominant convention ("snake_case", "camelCase", "mixed")
+        and the ratio of the dominant convention to total identifiers
+      - avg_line_length: mean non-blank line length across all code samples
+      - comment_density: ratio of comment lines to total non-blank lines
+      - avg_function_length: mean number of lines per function/method definition
+      - consistency_score: 0–1 aggregate measuring how self-consistent the
+        developer's style is across their code samples
+
+    Returns a dict with all metrics plus the aggregate consistency_score.
+    """
+    if not pairs:
+        return {"consistency_score": None}
+
+    code_samples = [p.get("response", "") for p in pairs if p.get("response", "").strip()]
+    if not code_samples:
+        return {"consistency_score": None}
+
+    _SNAKE = re.compile(r"\b[a-z][a-z0-9]*(?:_[a-z0-9]+)+\b")
+    _CAMEL = re.compile(r"\b[a-z][a-z0-9]*(?:[A-Z][a-z0-9]*)+\b")
+    _FUNC_DEF = re.compile(r"^\s*(?:def |function |async function |const \w+ = |let \w+ = |var \w+ = )", re.MULTILINE)
+
+    per_sample_line_lengths: list[float] = []
+    per_sample_comment_densities: list[float] = []
+    per_sample_func_lengths: list[float] = []
+    total_snake = 0
+    total_camel = 0
+
+    for code in code_samples:
+        lines = code.splitlines()
+        non_blank = [l for l in lines if l.strip()]
+        if not non_blank:
+            continue
+
+        per_sample_line_lengths.append(statistics.mean(len(l) for l in non_blank))
+
+        comment_lines = sum(
+            1 for l in non_blank
+            if l.strip().startswith("#") or l.strip().startswith("//") or l.strip().startswith("/*")
+        )
+        per_sample_comment_densities.append(comment_lines / len(non_blank))
+
+        total_snake += len(_SNAKE.findall(code))
+        total_camel += len(_CAMEL.findall(code))
+
+        func_starts = [i for i, l in enumerate(lines) if _FUNC_DEF.match(l)]
+        if func_starts:
+            lengths = []
+            for idx, start in enumerate(func_starts):
+                end = func_starts[idx + 1] if idx + 1 < len(func_starts) else len(lines)
+                lengths.append(end - start)
+            per_sample_func_lengths.append(statistics.mean(lengths))
+
+    total_idents = total_snake + total_camel
+    if total_idents > 0:
+        dominant_ratio = max(total_snake, total_camel) / total_idents
+        naming_convention = "snake_case" if total_snake >= total_camel else "camelCase"
+    else:
+        dominant_ratio = 1.0
+        naming_convention = "unknown"
+
+    avg_line_length = statistics.mean(per_sample_line_lengths) if per_sample_line_lengths else 0.0
+    comment_density = statistics.mean(per_sample_comment_densities) if per_sample_comment_densities else 0.0
+    avg_func_length = statistics.mean(per_sample_func_lengths) if per_sample_func_lengths else 0.0
+
+    # Consistency sub-scores: low variance across samples = high consistency.
+    subscores: list[float] = []
+
+    subscores.append(dominant_ratio)
+
+    if len(per_sample_line_lengths) >= 2:
+        cv_line = statistics.stdev(per_sample_line_lengths) / avg_line_length if avg_line_length > 0 else 0
+        subscores.append(max(0.0, 1.0 - cv_line))
+
+    if len(per_sample_comment_densities) >= 2:
+        sd_comment = statistics.stdev(per_sample_comment_densities)
+        subscores.append(max(0.0, 1.0 - sd_comment * 3))
+
+    if len(per_sample_func_lengths) >= 2:
+        cv_func = statistics.stdev(per_sample_func_lengths) / avg_func_length if avg_func_length > 0 else 0
+        subscores.append(max(0.0, 1.0 - cv_func))
+
+    consistency_score = round(statistics.mean(subscores), 4) if subscores else None
+
+    return {
+        "naming_convention": naming_convention,
+        "naming_dominance": round(dominant_ratio, 4),
+        "avg_line_length": round(avg_line_length, 1),
+        "comment_density": round(comment_density, 4),
+        "avg_function_length": round(avg_func_length, 1),
+        "consistency_score": consistency_score,
+    }
 
 
 class _TrainingResult:
@@ -144,7 +244,6 @@ def train_lora(
                 gradient_checkpointing_kwargs={"use_reentrant": False},
             )
             emit({"phase": "training", "candidate": handle, "message": "Quantized model prepared for QLoRA"})
-            # QLoRA path supports full rubric requirements for sophisticated training pipeline
 
         lora_config = LoraConfig(
             task_type=TaskType.CAUSAL_LM,
@@ -297,6 +396,9 @@ def train_lora(
     final_loss = getattr(_training_result, "final_loss", None)
     best_loss = getattr(_training_result, "best_loss", None)
 
+    style_metrics = compute_style_metrics(pairs)
+    style_consistency = style_metrics.get("consistency_score")
+
     manifest = {
         "name": f"{handle}-dna",
         "version": "1.0.0",
@@ -325,7 +427,7 @@ def train_lora(
         "eval_summary": {
             "final_loss": final_loss,
             "best_loss": best_loss,
-            "style_consistency": None,
+            "style_consistency": style_consistency,
             "domain_accuracy": None,
             "teacher_model": "grok-4",
         },
@@ -350,10 +452,10 @@ def train_lora(
             "best_loss": best_loss,
         },
         "benchmarks": {
-            "style_consistency": None,
+            "style_consistency": style_consistency,
+            "style_metrics": style_metrics,
             "domain_accuracy": None,
             "humaneval_score": None,
-            "note": "Run eval suite post-training to populate benchmark scores.",
         },
         "teacher_model": "grok-4",
         "created": created_at,

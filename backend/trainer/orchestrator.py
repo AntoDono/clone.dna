@@ -10,14 +10,30 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+
+def _workspace_listing(workspace_dir: str | None, limit: int = 30) -> str:
+    """Return a compact listing of the workspace for inclusion in prompts."""
+    if not workspace_dir:
+        return ""
+    ws = Path(workspace_dir)
+    if not ws.is_dir():
+        return ""
+    entries = sorted(ws.iterdir(), key=lambda p: (not p.is_dir(), p.name))[:limit]
+    if not entries:
+        return ""
+    names = [f"{e.name}/" if e.is_dir() else e.name for e in entries]
+    return ", ".join(names)
 
 
 def assign_tasks(
     pm_response: str,
     specialists: list,
     fallback_prompt: str,
+    workspace_dir: str | None = None,
 ) -> list[dict]:
     """
     Call Grok-4 to derive one task assignment per specialist from the PM's plan.
@@ -26,6 +42,7 @@ def assign_tasks(
         pm_response: The full text response from the PM/lead agent.
         specialists:  List of Candidate ORM objects with .github_handle and .role_slot.role.
         fallback_prompt: The original user prompt used when Grok parsing fails.
+        workspace_dir: Path to the team's sandboxed workspace (for context).
 
     Returns:
         List of {"handle": str, "task": str} dicts, one per specialist.
@@ -38,6 +55,11 @@ def assign_tasks(
         f"{s.github_handle} ({s.role_slot.role})" for s in specialists
     )
 
+    ws_context = ""
+    listing = _workspace_listing(workspace_dir)
+    if listing:
+        ws_context = f"\nWorkspace already contains: {listing}\nTasks should build on existing files, not start from scratch.\n"
+
     try:
         from openai import OpenAI as _OpenAI
         grok = _OpenAI(api_key=os.getenv("XAI_API_KEY", ""), base_url="https://api.x.ai/v1")
@@ -48,6 +70,7 @@ def assign_tasks(
                 "content": (
                     f"PM said:\n{pm_response}\n\n"
                     f"Team specialists: {specialist_list}.\n"
+                    f"{ws_context}"
                     "For each specialist, write ONE short task assignment sentence. "
                     "Return JSON: [{\"handle\": \"...\", \"task\": \"...\"}]. "
                     "Return ONLY valid JSON."

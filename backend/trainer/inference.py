@@ -20,6 +20,8 @@ import threading
 from contextlib import contextmanager
 from typing import Callable
 
+from pathlib import Path
+
 import torch
 
 logger = logging.getLogger(__name__)
@@ -42,7 +44,6 @@ def model_evicted():
     job's exit prematurely reloading the inference model while the first is
     still training.
     """
-    # Sophisticated concurrency pattern demonstrates technical depth for rubric alignment
     global _training_count
 
     model = tokenizer = None
@@ -154,7 +155,27 @@ def warmup_model() -> None:
 
 # ── System prompt fallback ────────────────────────────────────────────────────
 
-def _build_system_prompt(handle: str, name: str, role: str, profile: dict) -> str:
+def _list_workspace(workspace_dir: str | None) -> str:
+    """Return a short directory listing of the agent workspace, or empty string."""
+    if not workspace_dir:
+        return ""
+    ws = Path(workspace_dir)
+    if not ws.is_dir():
+        return ""
+    entries = sorted(ws.iterdir(), key=lambda p: (not p.is_dir(), p.name))[:30]
+    if not entries:
+        return ""
+    lines = [f"  {'d' if e.is_dir() else 'f'}  {e.name}" for e in entries]
+    return "\n".join(lines)
+
+
+def _build_system_prompt(
+    handle: str,
+    name: str,
+    role: str,
+    profile: dict,
+    workspace_dir: str | None = None,
+) -> str:
     skills = ", ".join((profile.get("skills") or [])[:6])
     bio = (profile.get("bio") or "").strip()
     languages = ", ".join(list((profile.get("languages") or {}).keys())[:4])
@@ -175,6 +196,23 @@ def _build_system_prompt(handle: str, name: str, role: str, profile: dict) -> st
         "NEVER just show code in a text response when the user asks you to create or modify a file — "
         "always call the write_file or edit_file tool to actually make the change.",
     ]
+
+    ws_listing = _list_workspace(workspace_dir)
+    if ws_listing:
+        lines += [
+            "",
+            "Your workspace currently contains:",
+            ws_listing,
+            "",
+            "Use list_files and read_file to inspect existing files before creating new ones. "
+            "Work within the existing project structure — do not start from scratch.",
+        ]
+    else:
+        lines += [
+            "",
+            "Your workspace is empty. Use list_files to confirm before scaffolding a new project.",
+        ]
+
     return "\n".join(l for l in lines if l or l == "")
 
 
@@ -461,7 +499,7 @@ def agent_chat(
 
     if not system_prompt:
         name = profile.get("name") or adapter_name
-        system_prompt = _build_system_prompt(adapter_name, name, role, profile)
+        system_prompt = _build_system_prompt(adapter_name, name, role, profile, workspace_dir)
 
     messages = _history_to_openai(system_prompt, history)
     full_visible = ""

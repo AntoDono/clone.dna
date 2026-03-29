@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import zipfile
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
@@ -45,7 +46,12 @@ def _read_json(path: Path) -> dict:
 
 
 def _collect_block(team_id: str, handle: str, block_dir: Path) -> dict | None:
-    """Read a single DNA block directory and return its summary dict."""
+    """Read a single DNA block directory and return its summary dict.
+
+    Returns None for missing manifests or revoked blocks.
+    """
+    if (block_dir / "revoked.json").exists():
+        return None
     manifest_path = block_dir / "manifest.json"
     if not manifest_path.exists():
         return None
@@ -206,6 +212,8 @@ def download_block(team_id: str, handle: str):
     block_dir = _DNAS_ROOT / team_id / handle
     if not block_dir.exists() or not (block_dir / "manifest.json").exists():
         raise HTTPException(404, f"DNA block '{handle}' not found for team {team_id}")
+    if (block_dir / "revoked.json").exists():
+        raise HTTPException(410, f"DNA block '{handle}' has been revoked")
 
     def _iter_zip():
         buf = io.BytesIO()
@@ -231,3 +239,31 @@ def download_block(team_id: str, handle: str):
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Revoke a DNA block ───────────────────────────────────────────────────────
+
+@router.delete("/{team_id}/{handle}")
+def revoke_block(team_id: str, handle: str):
+    """
+    Revoke a DNA block.  Places a revoked.json marker so the block is hidden
+    from listings, search, detail, and download — but the directory is
+    preserved on disk for audit provenance.
+    """
+    block_dir = _DNAS_ROOT / team_id / handle
+    if not block_dir.exists() or not (block_dir / "manifest.json").exists():
+        raise HTTPException(404, f"DNA block '{handle}' not found for team {team_id}")
+
+    revoked_path = block_dir / "revoked.json"
+    if revoked_path.exists():
+        raise HTTPException(409, f"DNA block '{handle}' is already revoked")
+
+    revoked = {
+        "handle": handle,
+        "team_id": team_id,
+        "revoked_at": datetime.now(timezone.utc).isoformat(),
+        "reason": "Block revoked via registry API",
+    }
+    revoked_path.write_text(json.dumps(revoked, indent=2))
+    logger.info("Revoked DNA block %s/%s", team_id, handle)
+    return {"status": "revoked", "team_id": team_id, "handle": handle}

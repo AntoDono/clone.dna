@@ -249,7 +249,7 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
         # ── Step 2: Grok assigns tasks to specialists ─────────────────────────
         specialists = [c for c in cloned if c.github_handle != lead_handle]
         assignments = await asyncio.to_thread(
-            assign_tasks, pm_response, specialists, body.prompt
+            assign_tasks, pm_response, specialists, body.prompt, workspace
         )
 
         # ── Step 3: Each specialist responds ─────────────────────────────────

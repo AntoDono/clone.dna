@@ -1,0 +1,44 @@
+---
+description: Clone.dna workspace context — project identity, stack, structure, and commands
+alwaysApply: true
+---
+
+# Clone.dna — Workspace Context
+
+This workspace is **Clone.dna** ("Hire the Mind. Not the Body.") — a platform that mints LoRA adapters (.dna blocks) from a developer's public GitHub work. It is NOT a generic Node/Express project.
+
+## Tech Stack
+
+- **Backend:** Python 3.11+ · FastAPI · Peewee (SQLite) · HuggingFace Transformers · PEFT · xAI Grok API
+- **Frontend:** Nuxt 3 · Vue 3 · Tailwind CSS · Bun
+- **Package managers:** `uv` (Python), `bun` (frontend). Never use npm, yarn, pip, or conda.
+
+## Directory Layout
+
+- `backend/` — FastAPI server (port 8000), managed by `uv`
+  - `routes/` — teams, candidates, clone_dna, build, registry
+  - `trainer/` — training, inference (LoRA hot-swap), orchestrator, grok (pair generation), tools (agent tool-use)
+  - `extractor/` — github, website, resume candidate extraction
+  - `dnas/` — exported .dna blocks (adapter weights + metadata)
+- `frontend/` — Nuxt 3 app (port 3000), managed by `bun`
+
+## Key Commands
+
+```bash
+# Backend
+cd backend && uv sync && uv run python main.py
+
+# Frontend
+cd frontend && bun install && bun run dev
+```
+
+## Environment Variables
+
+`XAI_API_KEY` (required), `BASE_MODEL` (default: Qwen/Qwen2.5-0.5B-Instruct), `GITHUB_TOKEN` (optional).
+
+## PM Orchestration
+
+"PM" and "sub-agent" refer to the multi-expert build flow in `backend/routes/build.py`:
+1. PM persona (lead candidate's LoRA adapter) decomposes a prompt into a task plan
+2. Grok assigns each sub-task to a specialist candidate (`backend/trainer/orchestrator.py`)
+3. Each specialist's LoRA adapter is hot-swapped via PEFT and generates its response in sequence
