@@ -1,3 +1,4 @@
+/** GitHub repository metadata from public profile data */
 export interface Repo {
   name: string
   description: string
@@ -7,6 +8,7 @@ export interface Repo {
   topics: string[]
 }
 
+/** Structured candidate profile built from GitHub data and Grok extraction */
 export interface CandidateProfile {
   github_handle: string
   name: string
@@ -23,11 +25,15 @@ export interface CandidateProfile {
   profile_url: string
   id?: number
   selected_at?: string
+  /** Whether the candidate's .dna block has been successfully minted */
   dna_cloned?: boolean
+  /** Filesystem path to the minted .dna block directory */
   dna_path?: string | null
+  /** ISO timestamp of when DNA cloning completed */
   dna_cloned_at?: string | null
 }
 
+/** A single message in a build workspace thread */
 export interface ChatMessage {
   id: number
   thread: string
@@ -36,6 +42,7 @@ export interface ChatMessage {
   created_at: string
 }
 
+/** A role slot (pm/swe/designer) within a team, tracking fill status and candidate assignment */
 export interface RoleSlot {
   id: number
   role: 'pm' | 'swe' | 'designer'
@@ -44,6 +51,7 @@ export interface RoleSlot {
   candidate: CandidateProfile | null
 }
 
+/** A hiring team with a fixed 4-slot layout (1 PM, 2 SWE, 1 Designer) */
 export interface Team {
   id: number
   name: string
@@ -58,6 +66,7 @@ export interface SearchResult {
   candidates: CandidateProfile[]
 }
 
+/** Typed API client for all Clone.dna backend REST endpoints. Use within Nuxt component context. */
 export const useApi = () => {
   const config = useRuntimeConfig()
   const base = config.public.apiBase

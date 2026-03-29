@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * Team board page — manage role slots, headhunt candidates, and trigger DNA cloning.
+ * Shows 4 role slot cards (1 PM, 2 SWE, 1 Designer).
+ * HeadHuntOverlay: AI-powered candidate discovery and selection.
+ * CloneDnaOverlay: streaming .dna minting pipeline with live progress.
+ */
 import type { Team, CandidateProfile, SearchResult } from '~/composables/useApi'
 
 const route = useRoute()

@@ -1,3 +1,15 @@
+"""
+Candidates router — GitHub headhunting, candidate selection, and profile extraction.
+
+Three candidate discovery paths:
+  1. AI headhunt stream (SSE) — searches GitHub by role, streams structured profiles;
+     results cached in-memory per team to avoid redundant API calls.
+  2. Website extraction — scrapes a personal site or portfolio URL via Grok.
+  3. Resume extraction — accepts raw resume text, extracts a structured profile via Grok.
+
+All three paths normalize to the same profile shape and persist via save_candidate().
+"""
+
 import asyncio
 import json
 
@@ -37,6 +49,7 @@ class ExtractResumeRequest(PydanticModel):
 
 @router.get("/teams/{team_id}/headhunt/stream")
 async def headhunt_stream(team_id: int, force: bool = Query(False)):
+    """Stream GitHub headhunt results over SSE: searches by role, builds profiles, caches results per team. Accepts force=true to bypass cache."""
     try:
         Team.get_by_id(team_id)
     except Team.DoesNotExist:
@@ -94,6 +107,7 @@ def clear_headhunt_cache(team_id: int):
 
 @router.get("/teams/{team_id}/roles/{slot_id}/search")
 def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
+  """Return cached or freshly fetched candidates for a specific role slot."""
     slot = get_slot(team_id, slot_id)
     key = (team_id, slot_id)
     if not force and key in _search_cache:
@@ -108,6 +122,7 @@ def search_role(team_id: int, slot_id: int, force: bool = Query(False)):
 
 @router.post("/teams/{team_id}/roles/{slot_id}/extract-website", status_code=201)
 def extract_website(team_id: int, slot_id: int, body: ExtractWebsiteRequest):
+    """Scrape a URL, extract a candidate profile via Grok, and persist to the slot."""
     slot = get_slot(team_id, slot_id)
     try:
         profile = extract_from_website(body.url.strip(), role=slot.role)
@@ -120,6 +135,7 @@ def extract_website(team_id: int, slot_id: int, body: ExtractWebsiteRequest):
 
 @router.post("/teams/{team_id}/roles/{slot_id}/extract-resume", status_code=201)
 def extract_resume(team_id: int, slot_id: int, body: ExtractResumeRequest):
+    """Extract a candidate profile from raw resume text via Grok and persist to the slot."""
     slot = get_slot(team_id, slot_id)
     try:
         profile = extract_from_resume(body.text.strip(), role=slot.role)
@@ -134,6 +150,7 @@ def extract_resume(team_id: int, slot_id: int, body: ExtractResumeRequest):
 
 @router.post("/teams/{team_id}/roles/{slot_id}/select", status_code=201)
 def select_candidate(team_id: int, slot_id: int, body: SelectCandidateRequest):
+    """Fetch a GitHub user profile and assign them to the specified role slot."""
     slot = get_slot(team_id, slot_id)
     profile = build_github_profile(body.github_handle, role=slot.role)
     if not profile:
@@ -144,6 +161,7 @@ def select_candidate(team_id: int, slot_id: int, body: SelectCandidateRequest):
 
 @router.delete("/teams/{team_id}/roles/{slot_id}/candidate", status_code=204)
 def remove_candidate(team_id: int, slot_id: int):
+    """Remove the candidate from a role slot and mark the slot as unfilled."""
     slot = get_slot(team_id, slot_id)
     with db.atomic():
         Candidate.delete().where(Candidate.role_slot == slot).execute()

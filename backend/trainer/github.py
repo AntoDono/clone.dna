@@ -25,6 +25,7 @@ SKIP_DIRS = ("test", "vendor", "node_modules", ".github", "dist", "__pycache__")
 
 
 def _gh_headers() -> dict:
+    """Build GitHub API request headers, including Bearer token if GITHUB_TOKEN is set."""
     token = os.getenv("GITHUB_TOKEN", "").strip()
     h = {"Accept": "application/vnd.github.v3+json"}
     if token and token.startswith("ghp_"):
@@ -33,6 +34,7 @@ def _gh_headers() -> dict:
 
 
 def _gh_get(url: str, params: dict | None = None) -> dict | list | None:
+    """Make an authenticated GET request to the GitHub API, returning parsed JSON or None on error."""
     try:
         r = requests.get(url, headers=_gh_headers(), params=params, timeout=15)
         return r.json() if r.status_code == 200 else None
@@ -42,7 +44,7 @@ def _gh_get(url: str, params: dict | None = None) -> dict | list | None:
 
 
 def fetch_repo_code(owner: str, repo: str) -> str:
-    """Fetch a meaningful slice of source code from a repo's root tree."""
+    """Fetch up to 4 source code blobs from a repo's HEAD tree, capped at 12KB each, annotated with file paths."""
     tree = _gh_get(f"{GITHUB_API}/repos/{owner}/{repo}/git/trees/HEAD", {"recursive": "1"})
     if not tree or not isinstance(tree, dict):
         return ""

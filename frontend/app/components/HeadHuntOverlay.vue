@@ -1,4 +1,12 @@
 <script setup lang="ts">
+/**
+ * Full-screen overlay for AI-powered candidate discovery and team assembly.
+ * Three phases: hunting (SSE streams candidates from GitHub) → selecting
+ * (user picks 1 PM, 2 SWE, 1 Designer) → confirming (saves selections to DB).
+ *
+ * Props: teamId (number), slots (RoleSlot[])
+ * Emits: done
+ */
 import type { CandidateProfile, RoleSlot } from '~/composables/useApi'
 
 const props = defineProps<{
@@ -40,6 +48,7 @@ function getSlot(role: string, index: number): RoleSlot | undefined {
 
 // ── Selection helpers ─────────────────────────────────────────────────────────
 
+// Toggle candidate selection for a role (max 1 PM, 2 SWE, 1 Designer)
 function toggle(role: string, handle: string) {
   if (phase.value !== 'selecting') return
   if (role === 'pm') {
@@ -78,6 +87,7 @@ const canConfirm = computed(
 
 let es: EventSource | null = null
 
+// Open SSE stream to /headhunt/stream, populate pool as candidates arrive
 function startStream(force = false) {
   const base = `${config.public.apiBase}/teams/${props.teamId}/headhunt/stream`
   const url = force ? `${base}?force=true` : base
@@ -115,6 +125,7 @@ function startStream(force = false) {
   }
 }
 
+// Clear server-side cache and restart the headhunt stream
 async function refetchCandidates() {
   isRefetching.value = true
   fromCache.value = false
@@ -137,6 +148,7 @@ async function refetchCandidates() {
 
 // ── Confirm selections ────────────────────────────────────────────────────────
 
+// POST all selections to assign candidates to their slots
 async function confirmSelections() {
   if (!canConfirm.value) return
   confirmError.value = ''
