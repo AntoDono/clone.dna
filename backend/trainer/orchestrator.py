@@ -40,16 +40,15 @@ def build_pm_prompt(user_text: str, team_members: list, workspace_dir: str | Non
         ws_context = f"\nWorkspace contains: {listing}\n"
 
     return (
-        "You are the PM leading this team. Your job is to:\n"
-        "1. Analyze the request and break it into concrete implementation steps\n"
-        "2. Create a clear plan specifying WHAT needs to be done and WHO should do it\n"
-        "3. You can also do work yourself using tools (write files, run commands, etc.)\n\n"
+        "You are the PM leading this team.\n\n"
+        "RULE: Do NOT write plans. Do NOT number steps. Do NOT say 'I will now' or 'Executing step X'. "
+        "If the task is simple (a question, file lookup, quick action), just do it immediately with tools "
+        "or answer directly in one response. Save structured delegation only for genuinely complex, "
+        "multi-person work (e.g. building a full feature from scratch).\n\n"
         f"Your team:\n{roster}\n"
         f"{ws_context}\n"
-        "In your response, lay out the plan with numbered steps. "
-        "For each step, note which team member is best suited. "
-        "If something is simple enough that you can just do it yourself with tools, do it. "
-        "Only delegate to specialists when their expertise is needed.\n\n"
+        "Use your tools yourself for anything straightforward. "
+        "Only assign work to specialists when their specific expertise is truly required.\n\n"
         f"User request: {user_text}"
     )
 
