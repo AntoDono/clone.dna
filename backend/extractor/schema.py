@@ -321,24 +321,53 @@ Return a valid JSON object:
 }"""
 
 
+def _call_fit_scoring(client: OpenAI, model: str, messages: list[dict]) -> FitScoreResult:
+    """Send a fit-scoring request to an OpenAI-compatible client and parse the result."""
+    response = client.chat.completions.create(
+        model=model,
+        messages=messages,
+        response_format={"type": "json_object"},
+        temperature=0.3,
+    )
+    raw = response.choices[0].message.content
+    return FitScoreResult(**json.loads(raw))
+
+
+def _call_fit_scoring_claude(system: str, user: str) -> FitScoreResult:
+    """Send a fit-scoring request via the native Anthropic SDK and parse the result."""
+    import anthropic
+    client = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
+    response = client.messages.create(
+        model="claude-haiku-4-5",
+        max_tokens=4096,
+        temperature=0.3,
+        system=system + "\n\nRespond with valid JSON only — no markdown, no prose.",
+        messages=[{"role": "user", "content": user}],
+    )
+    raw = response.content[0].text
+    return FitScoreResult(**json.loads(raw))
+
+
+def _openrouter_client() -> OpenAI:
+    return OpenAI(api_key=os.getenv("OPENROUTER_API_KEY", ""), base_url="https://openrouter.ai/api/v1")
+
+
+OPENROUTER_MODEL = "qwen/qwen3.5-122b-a10b"
+
+
 def score_candidates_against_jd(
     candidates: list[dict],
     job_description: str,
     role: str,
-) -> Optional[FitScoreResult]:
+) -> tuple[Optional[FitScoreResult], Optional[str]]:
     """
-    Score a list of candidate profiles against a job description using Grok.
+    Score candidates against a job description.
 
-    Sends all candidates in a single structured Grok call — produces per-candidate
-    scores across technical fit, domain fit, and seniority match, plus ranked reasoning
-    and gap analysis. Returns None if Grok is unavailable or fewer than 1 candidate provided.
+    Provider priority: Claude Haiku → xAI Grok → OpenRouter.
+    Returns (result, None) on success, (None, error_message) if all three fail.
     """
     if not candidates:
-        return None
-    try:
-        client = get_grok_client()
-    except RuntimeError:
-        return None
+        return None, "no candidates provided"
 
     role_context = ROLE_CONTEXT.get(role, "")
     candidate_summaries = []
@@ -365,23 +394,38 @@ def score_candidates_against_jd(
         f"--- JOB DESCRIPTION ---\n{job_description[:3000]}\n\n"
         f"--- CANDIDATES ---\n" + "\n\n".join(candidate_summaries)
     )
+    # OpenAI-style messages list reused by Grok + OpenRouter
+    compat_messages = [
+        {"role": "system", "content": _FIT_SCORE_SYSTEM},
+        {"role": "user",   "content": user_message},
+    ]
 
+    errors: dict[str, str] = {}
+
+    # 1. Claude Haiku (primary)
     try:
-        response = client.chat.completions.create(
-            model=GROK_MODEL,
-            messages=[
-                {"role": "system", "content": _FIT_SCORE_SYSTEM},
-                {"role": "user",   "content": user_message},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.3,
-        )
-        raw = response.choices[0].message.content
-        data = json.loads(raw)
-        return FitScoreResult(**data)
+        result = _call_fit_scoring_claude(_FIT_SCORE_SYSTEM, user_message)
+        return result, None
     except Exception as e:
-        print(f"[grok] fit scoring failed: {e}")
-        return None
+        errors["claude"] = str(e)
+        print(f"[fit-scoring] Claude failed: {e} — trying xAI Grok")
+
+    # 2. xAI Grok
+    try:
+        result = _call_fit_scoring(get_grok_client(), GROK_MODEL, compat_messages)
+        return result, None
+    except Exception as e:
+        errors["grok"] = str(e)
+        print(f"[fit-scoring] Grok failed: {e} — trying OpenRouter")
+
+    # 3. OpenRouter
+    try:
+        result = _call_fit_scoring(_openrouter_client(), OPENROUTER_MODEL, compat_messages)
+        return result, None
+    except Exception as e:
+        errors["openrouter"] = str(e)
+        print(f"[fit-scoring] OpenRouter also failed: {e}")
+        return None, "; ".join(f"{k}: {v}" for k, v in errors.items())
 
 
 def candidate_extract_to_profile(extract: CandidateExtract, source_url: str = "") -> dict:
