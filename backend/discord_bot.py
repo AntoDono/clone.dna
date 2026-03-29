@@ -22,7 +22,8 @@ import discord
 
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage, DiscordPairing
-from trainer import grok_chat
+from trainer import openrouter_chat
+# from trainer import claude_chat
 from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
 
@@ -151,7 +152,7 @@ async def _stream_speaker(
     history: list[dict],
     workspace: str,
 ) -> str:
-    """Run grok_chat for one speaker, streaming edits to a Discord message.
+    """Run claude_chat for one speaker, streaming edits to a Discord message.
     Returns the full response text."""
     buf: list[str] = []
     pending_attachments: list[dict] = []
@@ -169,7 +170,8 @@ async def _stream_speaker(
                 pass
 
     task = asyncio.to_thread(
-        grok_chat,
+        # claude_chat,
+        openrouter_chat,
         candidate=candidate.to_dict(),
         history=history,
         emit=emit,

@@ -136,10 +136,28 @@ class TestExecuteTool:
         assert ok
         assert "hello" in result
 
-    def test_run_command_blocks_shell_chaining(self, tmp_path):
+    def test_run_command_allows_limited_shell_chaining(self, tmp_path):
         result, ok = execute_tool(str(tmp_path), "run_command", {"command": "echo hi && pwd"})
+        assert ok
+        assert "hi" in result
+
+    def test_run_command_blocks_excess_chaining(self, tmp_path):
+        result, ok = execute_tool(
+            str(tmp_path),
+            "run_command",
+            {"command": "echo a && echo b && echo c && echo d"},
+        )
         assert not ok
-        assert "blocked" in result.lower() or "single command" in result.lower()
+        assert "at most" in result.lower() or "chained" in result.lower()
+
+    def test_run_command_allows_three_chained_commands(self, tmp_path):
+        result, ok = execute_tool(
+            str(tmp_path),
+            "run_command",
+            {"command": "echo a && echo b && echo c"},
+        )
+        assert ok
+        assert "a" in result and "b" in result and "c" in result
 
     def test_run_command_blocks_destructive_prefixes(self, tmp_path):
         result, ok = execute_tool(str(tmp_path), "run_command", {"command": "rm -rf ."})

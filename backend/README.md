@@ -144,7 +144,7 @@ The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in seq
 
 - **Adapter hot-swap** — the base model is loaded once at startup; adapters are applied with PEFT's `set_adapter` / `load_adapter` on every chat request, enabling multiple role slots to share one GPU copy of the base weights.
 - **Tool-use agent loop** — the model can emit structured tool calls (`read_file`, `write_file`, `run_command`, `list_files`, `search_registry`) that the backend executes inside `AGENT_WORKSPACE_DIR` and feeds back as tool results, enabling the clone to actually write and run code.
-- **Command policy + audit trail** — `run_command` executes a single local command with no shell chaining, redirects, or network/destructive prefixes, and every tool invocation is appended to `.clone_dna/tool_audit.jsonl` inside the team workspace.
+- **Command policy + audit trail** — `run_command` runs via `/bin/sh -c` with at most three chained commands (`&&`, `||`, `;`, `|`), no redirects or command substitution, and network/destructive prefixes blocked per segment; every tool invocation is appended to `.clone_dna/tool_audit.jsonl` inside the team workspace.
 - **Reference-counted eviction** — when training jobs need VRAM, `borrow_model_for_training()` evicts the inference model. The first training job evicts; intermediate jobs proceed directly; the last job out reloads the model automatically.
 
 ## PM Orchestration Flow

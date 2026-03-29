@@ -378,7 +378,10 @@ def grok_chat(
             "Just call the tool immediately. One tool call, then respond with what you did. "
             "Never output a numbered plan — that is not helpful. Act first, explain after if needed. "
             "When asked to build, create, write, edit, attach, or modify anything, "
-            "use the appropriate tool right now in this response."
+            "use the appropriate tool right now in this response.\n\n"
+            "PDF GENERATION: To produce a PDF, write the content as an HTML file with embedded CSS "
+            "first (use write_file), then compile it with: "
+            "run_command: weasyprint input.html output.pdf"
         )
 
     messages = [{"role": "system", "content": sys_prompt}]

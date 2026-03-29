@@ -25,7 +25,8 @@ from pydantic import BaseModel as PydanticModel
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage, User
 from routes.utils import sse as _sse_line
-from trainer import agent_chat, compare_generation, grok_chat
+from trainer import agent_chat, compare_generation, grok_chat, openrouter_chat
+# from trainer import claude_chat
 from trainer.orchestrator import assign_tasks, build_pm_prompt
 from trainer.tools import TOOL_SCHEMAS
 from routes.auth import get_current_user
@@ -243,7 +244,21 @@ async def build_chat(team_id: int, body: BuildChatRequest, current_user: User = 
     def run_inference():
         try:
             if body.use_grok:
-                text = grok_chat(
+                # grok_chat(
+                #     candidate=profile,
+                #     history=history,
+                #     emit=emit,
+                #     workspace_dir=workspace,
+                #     tools=TOOL_SCHEMAS,
+                # )
+                # claude_chat(
+                #     candidate=profile,
+                #     history=history,
+                #     emit=emit,
+                #     workspace_dir=workspace,
+                #     tools=TOOL_SCHEMAS,
+                # )
+                text = openrouter_chat(
                     candidate=profile,
                     history=history,
                     emit=emit,
@@ -430,7 +445,21 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest, current
         def run_pm():
             try:
                 if body.use_grok:
-                    text = grok_chat(
+                    # grok_chat(
+                    #     candidate=lead.to_dict(),
+                    #     history=pm_history,
+                    #     emit=make_emit(lead_handle),
+                    #     workspace_dir=workspace,
+                    #     tools=TOOL_SCHEMAS,
+                    # )
+                    # claude_chat(
+                    #     candidate=lead.to_dict(),
+                    #     history=pm_history,
+                    #     emit=make_emit(lead_handle),
+                    #     workspace_dir=workspace,
+                    #     tools=TOOL_SCHEMAS,
+                    # )
+                    text = openrouter_chat(
                         candidate=lead.to_dict(),
                         history=pm_history,
                         emit=make_emit(lead_handle),
@@ -508,10 +537,24 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest, current
 
             def run_spec(s=spec, sh=spec_handle, sr=spec.role_slot.role,
                          hist=[{"sender": "user", "content": task}], toks=spec_tokens,
-                         pm=lead):
+                         pm=lead, ug=body.use_grok):
                 try:
-                    if body.use_grok:
-                        text = grok_chat(
+                    if ug:
+                        # grok_chat(
+                        #     candidate=s.to_dict(),
+                        #     history=hist,
+                        #     emit=make_emit(sh),
+                        #     workspace_dir=workspace,
+                        #     tools=TOOL_SCHEMAS,
+                        # )
+                        # claude_chat(
+                        #     candidate=s.to_dict(),
+                        #     history=hist,
+                        #     emit=make_emit(sh),
+                        #     workspace_dir=workspace,
+                        #     tools=TOOL_SCHEMAS,
+                        # )
+                        text = openrouter_chat(
                             candidate=s.to_dict(),
                             history=hist,
                             emit=make_emit(sh),

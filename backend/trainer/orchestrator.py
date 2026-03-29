@@ -49,6 +49,8 @@ def build_pm_prompt(user_text: str, team_members: list, workspace_dir: str | Non
         f"{ws_context}\n"
         "Use your tools yourself for anything straightforward. "
         "Only assign work to specialists when their specific expertise is truly required.\n\n"
+        "PYTHON: When running Python commands, always use `python3` (the global interpreter). "
+        "Never use `python`, `./venv/bin/python`, or any project venv path.\n\n"
         "IMPORTANT: At the very end of your response, append exactly one of these XML tags on its own line:\n"
         "  <no_delegate/> — if you handled this yourself and no specialist needs to act\n"
         "  <delegate/> — if specialists genuinely have work to do\n\n"
