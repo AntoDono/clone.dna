@@ -57,12 +57,20 @@ onMounted(fetchTeams)
         <span class="text-xl font-bold text-white tracking-tight">Clone.dna</span>
         <span class="ml-2 text-sm text-slate-500 hidden sm:inline">Hire the Mind. Not the Body.</span>
       </div>
-      <button
-        class="border border-blue-500 text-blue-400 font-medium px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-colors"
-        @click="openModal"
-      >
-        + New Team
-      </button>
+      <div class="flex items-center gap-3">
+        <NuxtLink
+          to="/registry"
+          class="border border-slate-700 text-slate-400 font-medium px-4 py-1.5 text-sm hover:border-slate-500 hover:text-white transition-colors"
+        >
+          Registry
+        </NuxtLink>
+        <button
+          class="border border-blue-500 text-blue-400 font-medium px-4 py-1.5 text-sm hover:bg-blue-600 hover:text-white transition-colors"
+          @click="openModal"
+        >
+          + New Team
+        </button>
+      </div>
     </header>
 
     <!-- Main -->

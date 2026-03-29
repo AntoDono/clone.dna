@@ -573,3 +573,67 @@ def agent_chat(
         logger.warning("agent_chat hit max iterations (%d)", MAX_TOOL_ITERATIONS)
 
     return full_visible
+
+
+# ── Side-by-side comparison (base vs. adapter) ──────────────────────────────
+
+def compare_generation(
+    lora_path: str,
+    adapter_name: str,
+    role: str,
+    profile: dict,
+    prompt_text: str,
+    emit: Callable[[dict], None],
+    max_new_tokens: int = 512,
+    system_prompt: str | None = None,
+) -> dict:
+    """Generate the same prompt through the raw base model and the adapter-loaded
+    model, returning both outputs for side-by-side comparison.
+
+    Designed to be called via asyncio.to_thread().
+    """
+    model, tokenizer = ensure_base_model()
+
+    name = profile.get("name") or adapter_name
+    sys_prompt = system_prompt or _build_system_prompt(adapter_name, name, role, profile)
+    messages = _history_to_openai(sys_prompt, [{"sender": "user", "content": prompt_text}])
+
+    # 1) Generate with adapter loaded
+    load_adapter(lora_path, adapter_name)
+    prompt = _format_prompt(tokenizer, messages)
+    emit({"phase": "adapter", "status": "generating"})
+    adapter_visible, _, _ = _generate_once(
+        model, tokenizer, adapter_name, prompt,
+        lambda ev: emit({**ev, "source": "adapter"}),
+        max_new_tokens,
+    )
+
+    # 2) Generate with raw base model (no adapter)
+    with _cache_lock:
+        for old in list(_adapters_loaded):
+            if old == _NO_ADAPTER:
+                continue
+            try:
+                model.delete_adapter(old)
+            except Exception:
+                pass
+        _adapters_loaded.clear()
+        _adapters_loaded.add(_NO_ADAPTER)
+
+    emit({"phase": "base", "status": "generating"})
+    base_visible, _, _ = _generate_once(
+        model, tokenizer, _NO_ADAPTER, prompt,
+        lambda ev: emit({**ev, "source": "base"}),
+        max_new_tokens,
+    )
+
+    # Restore the adapter for subsequent requests
+    with _cache_lock:
+        _adapters_loaded.discard(_NO_ADAPTER)
+
+    return {
+        "prompt": prompt_text,
+        "adapter_name": adapter_name,
+        "base_response": base_visible,
+        "adapter_response": adapter_visible,
+    }

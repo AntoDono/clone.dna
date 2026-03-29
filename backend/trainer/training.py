@@ -36,6 +36,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from .grok import PAIR_SYSTEM_TEMPLATE, PAIR_USER_TEMPLATE, GROK_MODEL, PAIRS_PER_BLOB
 from .tool_examples import TOOL_USE_EXAMPLES
 
 logger = logging.getLogger(__name__)
@@ -580,17 +581,39 @@ def train_lora(
     with open(out / "sources.json", "w") as f:
         json.dump(sources, f, indent=2)
 
-    # consent.json — opt-in record (stub; full consent requires registry enrollment)
+    # teacher_config.json — prompt templates used for Grok pair generation
+    teacher_config = {
+        "teacher_model": GROK_MODEL,
+        "pairs_per_blob": PAIRS_PER_BLOB,
+        "system_template": PAIR_SYSTEM_TEMPLATE,
+        "user_template": PAIR_USER_TEMPLATE,
+        "temperature": 0.7,
+        "max_tokens": 4096,
+        "created": created_at,
+    }
+    with open(out / "teacher_config.json", "w") as f:
+        json.dump(teacher_config, f, indent=2)
+
+    # consent.json — opt-in record
+    source_repos = [r.get("url", "") for r in top_repos if r.get("url")]
     consent = {
         "handle": handle,
-        "consent_status": "pending",
+        "consent_status": "implicit_public",
+        "consent_scope": "public_repos_mit_apache",
         "public_repos_only": True,
         "revocable": True,
+        "source_count": len(source_repos),
+        "source_urls": source_repos,
+        "license_filter": "MIT/Apache-2.0",
+        "minted_at": created_at,
+        "minted_by": "clone.dna automated pipeline",
+        "revocation_endpoint": f"/registry/{Path(output_dir).parent.name}/{handle}",
         "note": (
-            "Full consent requires developer opt-in at registry.dnablocks.dev. "
-            "This block was minted from MIT/Apache-2.0 licensed public repositories only."
+            "This block was minted from MIT/Apache-2.0 licensed public repositories. "
+            "The developer can revoke this block at any time via the registry API "
+            "or by contacting the team. Full self-service consent management is "
+            "available at the developer enrollment portal."
         ),
-        "created": created_at,
     }
     with open(out / "consent.json", "w") as f:
         json.dump(consent, f, indent=2)

@@ -10,7 +10,7 @@ from pydantic import BaseModel as PydanticModel
 
 from db import db
 from models import Team, RoleSlot, Candidate, ChatMessage
-from trainer import agent_chat
+from trainer import agent_chat, compare_generation
 from trainer.orchestrator import assign_tasks
 from trainer.tools import TOOL_SCHEMAS
 
@@ -31,6 +31,11 @@ class BuildChatRequest(PydanticModel):
 
 
 class BuildOrchestrateRequest(PydanticModel):
+    prompt: str
+
+
+class BuildCompareRequest(PydanticModel):
+    handle: str
     prompt: str
 
 
@@ -147,6 +152,72 @@ async def build_chat(team_id: int, body: BuildChatRequest):
                     content=full_response[0],
                 )
             yield _sse({"done": True, "message_id": msg.id})
+        else:
+            yield _sse({"done": True})
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+# ── Side-by-side comparison (SSE stream) ──────────────────────────────────────
+
+@router.post("/teams/{team_id}/build/compare")
+async def build_compare(team_id: int, body: BuildCompareRequest):
+    """Generate the same prompt through raw base model and adapter-loaded model.
+
+    Streams SSE events with {"source": "adapter"|"base", "token": "..."} so the
+    frontend can display both responses side-by-side.
+    """
+    try:
+        Team.get_by_id(team_id)
+    except Team.DoesNotExist:
+        raise HTTPException(404, "Team not found")
+
+    candidate = _get_candidate_for_team(team_id, body.handle)
+    if not candidate.dna_cloned:
+        raise HTTPException(400, f"DNA not yet cloned for '{body.handle}'")
+
+    loop = asyncio.get_running_loop()
+    token_queue: asyncio.Queue = asyncio.Queue()
+    result_holder: list[dict] = []
+
+    def emit(event: dict):
+        loop.call_soon_threadsafe(token_queue.put_nowait, event)
+
+    def run_compare():
+        try:
+            result = compare_generation(
+                lora_path=candidate.dna_path,
+                adapter_name=body.handle,
+                role=candidate.role_slot.role,
+                profile=candidate.to_dict(),
+                prompt_text=body.prompt,
+                emit=emit,
+                system_prompt=candidate.system_prompt or None,
+            )
+            result_holder.append(result)
+        except Exception as e:
+            emit({"error": str(e)})
+        finally:
+            loop.call_soon_threadsafe(token_queue.put_nowait, {"__done__": True})
+
+    async def generator():
+        threading.Thread(target=run_compare, daemon=True).start()
+        while True:
+            ev = await token_queue.get()
+            if ev.get("__done__"):
+                break
+            yield _sse(ev)
+
+        if result_holder:
+            yield _sse({
+                "done": True,
+                "base_response": result_holder[0]["base_response"],
+                "adapter_response": result_holder[0]["adapter_response"],
+            })
         else:
             yield _sse({"done": True})
 

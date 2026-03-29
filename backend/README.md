@@ -106,6 +106,7 @@ The stream emits JSON events at each pipeline stage so the frontend can display 
 | Method | Path | Description |
 |---|---|---|
 | `POST` | `.../chat` | **SSE stream** — single-candidate chat; hot-swaps the LoRA adapter for the selected role |
+| `POST` | `.../compare` | **SSE stream** — side-by-side: same prompt through raw base model and adapter-loaded model |
 | `POST` | `.../orchestrate` | **SSE stream** — PM orchestration; PM plans the response, Grok assigns tasks, each specialist responds in sequence |
 | `GET` | `.../messages` | Full message history for the team's build workspace |
 
@@ -132,7 +133,8 @@ The minting pipeline (`clone_dna` route → `trainer/`) runs these stages in seq
    - `manifest.json` — candidate metadata, base model, rank/alpha, eval summary
    - `eval.json` — loss history, pair counts, benchmark scores
    - `sources.json` — provenance for every source repo
-   - `consent.json` — opt-in record (public repos only, revocability noted)
+   - `consent.json` — opt-in record (consent scope, source URLs, revocation endpoint, public-repos-only flag)
+   - `teacher_config.json` — exact Grok prompt templates used for pair generation (system + user templates, temperature, model)
    - `profile.md` — human-readable candidate profile used by the agent router
 
 ## Inference & Agent Loop

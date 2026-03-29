@@ -14,6 +14,24 @@ logger = logging.getLogger(__name__)
 GROK_MODEL = "grok-4.20-0309-reasoning"
 PAIRS_PER_BLOB = 6
 
+PAIR_SYSTEM_TEMPLATE = (
+    "You are analyzing the code written by {name} (GitHub: @{handle}). "
+    "Their primary skills: {skills}. Languages: {languages}. "
+    "Your task: generate high-quality instruction→response training pairs that capture "
+    "their coding style, architecture patterns, and domain expertise. "
+    "Each pair should be a realistic programming task with a response in their style."
+)
+
+PAIR_USER_TEMPLATE = (
+    "Here is real source code from their GitHub repo '{repo}':\n\n"
+    "```\n{code}\n```\n\n"
+    "Generate exactly {pairs_per_blob} instruction→response pairs as a JSON array. "
+    "Each element must be: {{\"instruction\": \"<task>\", \"response\": \"<code/answer>\"}}. "
+    "The instructions should be realistic engineering tasks. "
+    "The responses should match this developer's actual style from the code above. "
+    "Return ONLY valid JSON, no markdown fences."
+)
+
 
 def _grok_client() -> OpenAI:
     return OpenAI(
@@ -50,22 +68,12 @@ def generate_training_pairs(
             "message": f"Generating training pairs from {repo}...",
         })
 
-        system_prompt = (
-            f"You are analyzing the code written by {name} (GitHub: @{handle}). "
-            f"Their primary skills: {skills}. Languages: {languages}. "
-            "Your task: generate high-quality instruction→response training pairs that capture "
-            "their coding style, architecture patterns, and domain expertise. "
-            "Each pair should be a realistic programming task with a response in their style."
+        system_prompt = PAIR_SYSTEM_TEMPLATE.format(
+            name=name, handle=handle, skills=skills, languages=languages,
         )
 
-        user_prompt = (
-            f"Here is real source code from their GitHub repo '{repo}':\n\n"
-            f"```\n{code[:8000]}\n```\n\n"
-            f"Generate exactly {PAIRS_PER_BLOB} instruction→response pairs as a JSON array. "
-            "Each element must be: {\"instruction\": \"<task>\", \"response\": \"<code/answer>\"}. "
-            "The instructions should be realistic engineering tasks. "
-            "The responses should match this developer's actual style from the code above. "
-            "Return ONLY valid JSON, no markdown fences."
+        user_prompt = PAIR_USER_TEMPLATE.format(
+            repo=repo, code=code[:8000], pairs_per_blob=PAIRS_PER_BLOB,
         )
 
         try:
