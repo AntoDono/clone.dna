@@ -51,11 +51,39 @@ async function runFitScore() {
   scoring.value = true
   scoreError.value = ''
   try {
-    const res = await api.scoreHeadhuntCandidates(props.teamId, jd, 'swe')
+    // Score each role with its own role-appropriate context in parallel
+    const [pmRes, sweRes, designerRes] = await Promise.allSettled([
+      api.scoreHeadhuntCandidates(props.teamId, jd, 'pm'),
+      api.scoreHeadhuntCandidates(props.teamId, jd, 'swe'),
+      api.scoreHeadhuntCandidates(props.teamId, jd, 'designer'),
+    ])
+
     const map: Record<string, CandidateFitScore> = {}
-    for (const s of res.ranked) map[s.handle] = s
-    fitScores.value = map
-    showScorePanel.value = false
+
+    // Only use scores from the role-matching call for each column's candidates
+    const pmHandles = new Set(pool.value.pm.map(c => c.github_handle))
+    const sweHandles = new Set(pool.value.swe.map(c => c.github_handle))
+    const designerHandles = new Set(pool.value.designer.map(c => c.github_handle))
+
+    if (pmRes.status === 'fulfilled')
+      for (const s of pmRes.value.ranked)
+        if (pmHandles.has(s.handle)) map[s.handle] = s
+
+    if (sweRes.status === 'fulfilled')
+      for (const s of sweRes.value.ranked)
+        if (sweHandles.has(s.handle)) map[s.handle] = s
+
+    if (designerRes.status === 'fulfilled')
+      for (const s of designerRes.value.ranked)
+        if (designerHandles.has(s.handle)) map[s.handle] = s
+
+    if (Object.keys(map).length === 0) {
+      const firstErr = [pmRes, sweRes, designerRes].find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+      scoreError.value = firstErr?.reason?.data?.detail ?? 'Scoring failed — check backend'
+    } else {
+      fitScores.value = map
+      showScorePanel.value = false
+    }
   } catch (e: any) {
     scoreError.value = e?.data?.detail ?? 'Scoring failed — check backend'
   } finally {

@@ -169,17 +169,21 @@ def score_headhunt_candidates(team_id: int, body: FitScoreRequest, current_user:
     require_team_owner(team_id, current_user)
 
     cached = _headhunt_cache.get(team_id, [])
-    candidates = [event["candidate"] for event in cached if "candidate" in event]
+    candidates = [
+        event["candidate"] for event in cached
+        if "candidate" in event and event.get("role") == body.role
+    ]
 
     if not candidates:
-        raise HTTPException(422, "No headhunted candidates found for this team — run the headhunt stream first")
+        raise HTTPException(422, f"No headhunted '{body.role}' candidates found for this team — run the headhunt stream first")
 
     if len(body.job_description.strip()) < 20:
         raise HTTPException(422, "job_description is too short — provide at least a sentence describing the role")
 
-    result = score_candidates_against_jd(candidates, body.job_description, body.role)
+    result, score_error = score_candidates_against_jd(candidates, body.job_description, body.role)
     if not result:
-        raise HTTPException(503, "Grok fit scoring unavailable — check XAI_API_KEY")
+        detail = f"Grok fit scoring unavailable — {score_error}" if score_error else "Grok fit scoring unavailable"
+        raise HTTPException(503, detail)
 
     # Merge scores back into candidate profiles for a single enriched response
     score_map = {s.handle: s for s in result.scores}

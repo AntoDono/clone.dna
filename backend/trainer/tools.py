@@ -172,10 +172,8 @@ _BLOCKED_COMMAND_PREFIXES = {
 _CHAIN_SEPARATOR_TOKENS = frozenset({"&&", "||", ";", "|"})
 _MAX_CHAINED_COMMANDS = 3
 
-# Still blocked: redirects and command substitution (even when chaining is allowed).
+# Still blocked: command substitution (even when chaining is allowed).
 _BLOCKED_COMMAND_METACHAR_SUBSTRINGS = (
-    ">",
-    "<",
     "$(",
     "`",
 )

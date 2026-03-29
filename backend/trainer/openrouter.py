@@ -12,7 +12,7 @@ from openai import OpenAI
 
 logger = logging.getLogger(__name__)
 
-OPENROUTER_MODEL = "qwen/qwen3.5-35b-a3b"
+OPENROUTER_MODEL = "qwen/qwen3.5-122b-a10b"
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 MAX_OPENROUTER_TOOL_ITERATIONS = 10
 
@@ -115,15 +115,20 @@ def openrouter_chat(
             "  attach_file   → {\"path\": \"report.txt\"}\n"
             "  create_folder → {\"path\": \"dirname\"}\n"
             "  list_files    → {\"path\": \".\"}\n\n"
-            "ALWAYS deliver output as a file. Workflow for ANY deliverable:\n"
-            "  STEP 1 — write the file:\n"
-            "  <tool_call>{\"name\": \"write_file\", \"arguments\": {\"path\": \"output.txt\", \"content\": \"...\"}}</tool_call>\n"
-            "  STEP 2 — attach it so it appears as a download in the channel:\n"
-            "  <tool_call>{\"name\": \"attach_file\", \"arguments\": {\"path\": \"output.txt\"}}</tool_call>\n\n"
+            "ALWAYS deliver output as a file. Workflow for documents and reports:\n"
+            "  STEP 1 — write Markdown: write_file {\"path\": \"report.md\", \"content\": \"...\"}\n"
+            "  STEP 2 — convert to PDF: run_command {\"command\": \"pandoc report.md -o report.pdf\"}\n"
+            "  STEP 3 — wait for it: run_command {\"command\": \"sleep 3\"}\n"
+            "  STEP 4 — attach the PDF: attach_file {\"path\": \"report.pdf\"}\n"
+            "For plain code or data files skip steps 2-3 and attach the .md or .txt directly.\n\n"
             "NEVER say 'the attachment mechanism isn't available', 'I can't attach', or 'share it manually'. "
             "attach_file is live. If you skip it the user sees nothing. Always call it.\n\n"
             "CRITICAL: Do NOT narrate plans. Do NOT say 'I will now...'. Call the tool, then briefly state what you did.\n\n"
-            "PYTHON: Always use `python3` (global). Never use `python`, venv paths, or `./venv/`."
+            "PYTHON: Always use `python3` (global). Never use `python`, venv paths, or `./venv/`.\n\n"
+            "RUNNING SERVERS / LONG PROCESSES: Any command that starts a server or long-running process "
+            "(npm run dev, python3 main.py, uvicorn, etc.) MUST be run detached so it does not hang. "
+            "Always append `> /tmp/proc.log 2>&1 &` to detach it. Example: "
+            "`npm run dev > /tmp/frontend.log 2>&1 &` — then confirm it started with a follow-up command like `sleep 2 && cat /tmp/frontend.log`."
         )
 
     messages = [{"role": "system", "content": sys_prompt}]
