@@ -107,6 +107,23 @@ TOOL_SCHEMAS = [
     {
         "type": "function",
         "function": {
+            "name": "attach_file",
+            "description": (
+                "Attach a file from the workspace and send it as a downloadable file in the chat or Discord. "
+                "Use this when the user asks you to 'send', 'share', or 'attach' a specific file."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string", "description": "Relative file path within the workspace to attach"},
+                },
+                "required": ["path"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "search_registry",
             "description": (
                 "Search the DNA talent registry for expert .dna blocks by skills or domain. "
@@ -294,6 +311,19 @@ def _exec_run_command(workspace: Path, args: dict) -> str:
         return f"Error: {e}"
 
 
+def _exec_attach_file(workspace: Path, args: dict) -> str:
+    """Stage a workspace file as an attachment to be sent to the user."""
+    rel_path = args["path"]
+    target = _safe_path(workspace, rel_path)
+    if not target.exists():
+        return f"Error: file not found: {rel_path}"
+    if not target.is_file():
+        return f"Error: not a file: {rel_path}"
+    size = target.stat().st_size
+    marker = json.dumps({"name": target.name, "path": rel_path, "size": size})
+    return f"__ATTACHMENT__:{marker}"
+
+
 def _exec_search_registry(_workspace: Path, args: dict) -> str:
     """Query the .dna registry for blocks matching skills/domain filters."""
     skills_raw = args.get("skills", "")
@@ -355,6 +385,7 @@ _EXECUTORS = {
     "list_files": _exec_list_files,
     "edit_file": _exec_edit_file,
     "run_command": _exec_run_command,
+    "attach_file": _exec_attach_file,
     "search_registry": _exec_search_registry,
 }
 

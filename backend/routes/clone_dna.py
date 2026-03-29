@@ -8,8 +8,11 @@ Runs four sequential stages per candidate:
   3. Training    — runs QLoRA fine-tuning; concurrency bounded by NUM_OF_PARALLEL_TRAINING
   4. Saving      — writes the .dna block to dnas/{team_id}/{handle}/
 
-Emergency calibration (?emergency_calibration=1): emits a simulated training stream
-without real training — for demos without GPU access.
+Training mode:
+  - ALLOW_LOCAL_TRAINING=true (default): real QLoRA fine-tuning runs on the local GPU.
+  - ALLOW_LOCAL_TRAINING=false: simulated training stream (no GPU required) — same as
+    ?emergency_calibration=1 but controlled server-side via env var.
+  - ?emergency_calibration=1: forces simulated mode regardless of ALLOW_LOCAL_TRAINING.
 """
 
 import asyncio
@@ -197,7 +200,8 @@ async def clone_dna_stream(team_id: int, emergency_calibration: int = 0):
         raise HTTPException(400, "No candidates selected — fill the team first")
 
     dnas_root = Path(os.getenv("DNAS_DIR", "dnas"))
-    skip_training = emergency_calibration == 1
+    allow_local = os.getenv("ALLOW_LOCAL_TRAINING", "true").strip().lower() not in ("false", "0", "no")
+    skip_training = emergency_calibration == 1 or not allow_local
 
     async def generator():
         yield f"data: {json.dumps({'phase': 'start', 'candidates': [c['github_handle'] for c in candidates]})}\n\n"

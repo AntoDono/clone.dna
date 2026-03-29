@@ -49,12 +49,12 @@ function threadKey(t: ActiveThread) {
 function isUserMsg(msg: ChatMessage) { return msg.sender === 'user' }
 
 interface ContentSegment {
-  type: 'text' | 'tool_call' | 'tool_result'
+  type: 'text' | 'tool_call' | 'tool_result' | 'attachment'
   data: string | Record<string, any>
 }
 
 const KNOWN_COMMANDS = new Set([
-  'run_command', 'write_file', 'read_file', 'create_folder', 'list_files', 'edit_file',
+  'run_command', 'write_file', 'read_file', 'create_folder', 'list_files', 'edit_file', 'attach_file',
 ])
 
 function tryExtractJsonCommand(text: string): ContentSegment[] {
@@ -91,7 +91,7 @@ function tryExtractJsonCommand(text: string): ContentSegment[] {
 // Split message content into typed segments (text / tool_call / tool_result)
 function parseMessageContent(content: string): ContentSegment[] {
   const segments: ContentSegment[] = []
-  const regex = /\[\[(TOOL_CALL|TOOL_RESULT):(.*?)\]\]/gs
+  const regex = /\[\[(TOOL_CALL|TOOL_RESULT|ATTACHMENT):(.*?)\]\]/gs
   let lastIndex = 0
   let match: RegExpExecArray | null
 
@@ -102,7 +102,8 @@ function parseMessageContent(content: string): ContentSegment[] {
     }
     try {
       const parsed = JSON.parse(match[2])
-      segments.push({ type: match[1] === 'TOOL_CALL' ? 'tool_call' : 'tool_result', data: parsed })
+      const segType = match[1] === 'TOOL_CALL' ? 'tool_call' : match[1] === 'ATTACHMENT' ? 'attachment' : 'tool_result'
+      segments.push({ type: segType, data: parsed })
     } catch {
       segments.push({ type: 'text', data: match[0] })
     }
@@ -133,6 +134,18 @@ const TOOL_ICONS: Record<string, string> = {
   list_files: '> ls',
   edit_file: '> edit',
   run_command: '> $',
+  attach_file: '> attach',
+}
+
+function fileIcon(name: string): string {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) return '🖼'
+  if (['json', 'yaml', 'yml', 'toml', 'xml'].includes(ext)) return '📋'
+  if (['py', 'ts', 'js', 'rs', 'go', 'c', 'cpp', 'sh'].includes(ext)) return '📄'
+  if (['zip', 'tar', 'gz', 'rar'].includes(ext)) return '📦'
+  if (['csv', 'xlsx', 'xls'].includes(ext)) return '📊'
+  if (['md', 'txt', 'log'].includes(ext)) return '📝'
+  return '📎'
 }
 
 const expandedTools = ref<Set<number>>(new Set())
@@ -283,6 +296,24 @@ const inputModel = computed({
                       @click="toggleExpand(sIdx + 10000)"
                     >{{ expandedTools.has(sIdx + 10000) ? (seg.data as any).output : truncate((seg.data as any).output, 200) }}</div>
                   </div>
+
+                  <a
+                    v-else-if="seg.type === 'attachment'"
+                    :href="(seg.data as any).url"
+                    :download="(seg.data as any).name"
+                    class="my-2 flex items-center gap-3 px-4 py-3 bg-slate-900 border border-slate-700 hover:border-blue-600 hover:bg-slate-800/60 transition-colors group no-underline"
+                  >
+                    <span class="text-2xl leading-none select-none">{{ fileIcon((seg.data as any).name) }}</span>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm font-medium text-slate-200 group-hover:text-blue-300 truncate transition-colors">
+                        {{ (seg.data as any).name }}
+                      </p>
+                      <p class="text-xs text-slate-500 mt-0.5">
+                        {{ ((seg.data as any).size / 1024).toFixed(1) }} KB · click to download
+                      </p>
+                    </div>
+                    <span class="text-slate-600 group-hover:text-blue-400 transition-colors text-xs font-mono shrink-0">↓</span>
+                  </a>
                 </template>
               </template>
               <span

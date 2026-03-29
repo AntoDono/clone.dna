@@ -213,6 +213,19 @@ export function useTeamChat(teamId: number, apiBase: string) {
                 threads.value[key]![assistantIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
                 scrollToBottom()
               }
+            } else if (data.attachment) {
+              isThinking.value = false
+              if (assistantIdx === -1) {
+                if (!threads.value[key]) threads.value[key] = []
+                threads.value[key].push({
+                  id: Date.now() + 1, thread: key, sender: key,
+                  content: '', created_at: new Date().toISOString(),
+                })
+                assistantIdx = threads.value[key].length - 1
+              }
+              const fullUrl = `${apiBase}${data.attachment.url}`
+              threads.value[key]![assistantIdx]!.content += `\n[[ATTACHMENT:${JSON.stringify({ ...data.attachment, url: fullUrl })}]]\n`
+              scrollToBottom()
             } else if (data.done && data.message_id) {
               if (assistantIdx !== -1) threads.value[key]![assistantIdx]!.id = data.message_id
             } else if (data.error) {
@@ -333,6 +346,11 @@ export function useTeamChat(teamId: number, apiBase: string) {
                 threads.value[key]![currentMsgIdx]!.content += `\n[[TOOL_RESULT:${JSON.stringify(data.tool_result)}]]\n`
                 scrollToBottom()
               }
+            } else if (data.speaker && data.attachment) {
+              const idx = getOrCreateBubbleIdx(data.speaker)
+              const fullUrl = `${apiBase}${data.attachment.url}`
+              threads.value[key]![idx]!.content += `\n[[ATTACHMENT:${JSON.stringify({ ...data.attachment, url: fullUrl })}]]\n`
+              scrollToBottom()
             }
           } catch { /* skip malformed */ }
         }

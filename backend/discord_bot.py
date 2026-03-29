@@ -12,6 +12,7 @@ Started automatically by main.py when DISCORD_BOT_TOKEN is set.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
@@ -131,11 +132,16 @@ def _clean_tool_calls(text: str) -> str:
                 return f"`mkdir: {args.get('path', '?')}`"
             if name == "list_files":
                 return f"`ls: {args.get('path', '.')}`"
+            if name == "attach_file":
+                return f"`attach: {args.get('path', '?')}`"
             return f"`{name}: {', '.join(f'{k}={v}' for k, v in args.items())}`"
         except Exception:
             return "`(tool call)`"
 
     return _TOOL_CALL_RE.sub(_replace, text)
+
+
+_ATTACH_PREFIX = "__ATTACHMENT__:"
 
 
 async def _stream_speaker(
@@ -148,12 +154,19 @@ async def _stream_speaker(
     """Run grok_chat for one speaker, streaming edits to a Discord message.
     Returns the full response text."""
     buf: list[str] = []
-    buf_lock = asyncio.Lock()
+    pending_attachments: list[dict] = []
 
     def emit(event: dict):
         tok = event.get("token")
         if tok:
             buf.append(tok)
+        tr = event.get("tool_result")
+        if tr and isinstance(tr.get("output"), str) and tr["output"].startswith(_ATTACH_PREFIX):
+            try:
+                att = json.loads(tr["output"][len(_ATTACH_PREFIX):])
+                pending_attachments.append(att)
+            except Exception:
+                pass
 
     task = asyncio.to_thread(
         grok_chat,
@@ -197,6 +210,15 @@ async def _stream_speaker(
         pass
     for extra in chunks[1:]:
         await channel.send(extra)
+
+    ws_path = Path(workspace).resolve()
+    for att in pending_attachments:
+        file_path = (ws_path / att["path"]).resolve()
+        if str(file_path).startswith(str(ws_path)) and file_path.is_file():
+            try:
+                await channel.send(file=discord.File(str(file_path), filename=att["name"]))
+            except discord.HTTPException as exc:
+                await channel.send(f"⚠️ Could not attach `{att['name']}`: {exc}")
 
     return full_text
 

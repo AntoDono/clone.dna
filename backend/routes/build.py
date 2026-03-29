@@ -18,7 +18,7 @@ import threading
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel as PydanticModel
 
 from db import db
@@ -102,6 +102,49 @@ def _get_candidate_for_team(team_id: int, handle: str) -> Candidate:
 def _sse(data: dict) -> str:
     """Format a dict as an SSE data line for StreamingResponse."""
     return f"data: {json.dumps(data)}\n\n"
+
+
+_ATTACHMENT_PREFIX = "__ATTACHMENT__:"
+
+
+def _extract_attachment(ev: dict, team_id: int) -> dict | None:
+    """If ev contains an attach_file tool result, parse it and return an attachment dict.
+
+    Also mutates ev['tool_result']['output'] to a friendly summary so the raw
+    marker is never shown in the chat bubble or stored in the DB.
+    """
+    tr = ev.get("tool_result")
+    if not tr:
+        return None
+    output = tr.get("output", "")
+    if not isinstance(output, str) or not output.startswith(_ATTACHMENT_PREFIX):
+        return None
+    try:
+        att = json.loads(output[len(_ATTACHMENT_PREFIX):])
+        att["url"] = f"/teams/{team_id}/build/files/{att['path']}"
+        size_kb = round(att.get("size", 0) / 1024, 1)
+        tr["output"] = f"Attached: {att['name']} ({size_kb} KB)"
+        return att
+    except Exception:
+        return None
+
+
+# ── File download ─────────────────────────────────────────────────────────────
+
+@router.get("/teams/{team_id}/build/files/{path:path}")
+async def build_get_file(team_id: int, path: str):
+    """Serve a file from the team's agent workspace for download."""
+    workspace = Path(_workspace_for_team(team_id)).resolve()
+    target = (workspace / path).resolve()
+    if not str(target).startswith(str(workspace)):
+        raise HTTPException(403, "Access denied")
+    if not target.exists() or not target.is_file():
+        raise HTTPException(404, "File not found")
+    return FileResponse(
+        str(target),
+        filename=target.name,
+        headers={"Content-Disposition": f'attachment; filename="{target.name}"'},
+    )
 
 
 # ── Get message history ───────────────────────────────────────────────────────
@@ -230,7 +273,10 @@ async def build_chat(team_id: int, body: BuildChatRequest):
             ev = await token_queue.get()
             if ev.get("__done__"):
                 break
+            att = _extract_attachment(ev, team_id)
             yield _sse(ev)
+            if att:
+                yield _sse({"attachment": att})
 
         if full_response:
             with db.atomic():
@@ -422,7 +468,10 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
             ev = await shared_queue.get()
             if ev.get("__speaker_done__") == lead_handle:
                 break
+            att = _extract_attachment(ev, team_id)
             yield _sse(ev)
+            if att:
+                yield _sse({"speaker": ev.get("speaker"), "attachment": att})
 
         pm_response = pm_tokens[0] if pm_tokens else ""
         run_record["pm_response"] = pm_response
@@ -496,7 +545,10 @@ async def build_orchestrate(team_id: int, body: BuildOrchestrateRequest):
                 ev = await shared_queue.get()
                 if ev.get("__speaker_done__") == spec_handle:
                     break
+                att = _extract_attachment(ev, team_id)
                 yield _sse(ev)
+                if att:
+                    yield _sse({"speaker": ev.get("speaker"), "attachment": att})
 
             if spec_tokens:
                 run_record["specialist_outputs"].append({
