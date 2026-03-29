@@ -19,7 +19,7 @@ class BaseModel(Model):
 
 class Team(BaseModel):
     name = CharField()
-    discord_pair_code = CharField(null=True, unique=True)
+    discord_pair_code = CharField(null=True)
     created_at = DateTimeField(default=datetime.utcnow)
 
     def to_dict(self) -> dict:

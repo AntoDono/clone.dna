@@ -21,6 +21,7 @@ dependencies = [
     "optimum>=1.19.0",
     "gptqmodel>=2.0.0",
     "bitsandbytes>=0.49.2",
+    "discord.py>=2.3.0",
 ]
 
 [tool.ruff]

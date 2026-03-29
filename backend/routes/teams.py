@@ -1,4 +1,5 @@
 import json
+import secrets
 from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
@@ -26,7 +27,8 @@ class CreateTeamRequest(PydanticModel):
 @router.post("/teams", status_code=201)
 def create_team(body: CreateTeamRequest):
     with db.atomic():
-        team = Team.create(name=body.name.strip())
+        pair_code = secrets.token_hex(3)
+        team = Team.create(name=body.name.strip(), discord_pair_code=pair_code)
         for r in ROLE_LAYOUT:
             RoleSlot.create(team=team, role=r["role"], slot_index=r["slot_index"])
     return team.to_dict()

@@ -26,11 +26,18 @@ def _migrate_candidate_columns() -> None:
             db.execute_sql(f"ALTER TABLE candidate ADD COLUMN {col} {definition}")
 
 
+def _migrate_team_columns() -> None:
+    """Add discord_pair_code column to team table if it doesn't exist yet."""
+    cursor = db.execute_sql("PRAGMA table_info(team)")
+    existing = {row[1] for row in cursor.fetchall()}
+    if "discord_pair_code" not in existing:
+        db.execute_sql("ALTER TABLE team ADD COLUMN discord_pair_code TEXT")
+
+
 def init_db() -> None:
-    from models import Team, RoleSlot, Candidate, ChatMessage  # noqa: F401
+    from models import Team, RoleSlot, Candidate, ChatMessage, DiscordPairing  # noqa: F401
 
     with db:
-        db.create_tables([Team, RoleSlot, Candidate, ChatMessage], safe=True)
-        # Add new columns to existing Candidate rows (safe=True only creates missing tables,
-        # not missing columns — so we migrate manually for the dna_* fields)
+        db.create_tables([Team, RoleSlot, Candidate, ChatMessage, DiscordPairing], safe=True)
         _migrate_candidate_columns()
+        _migrate_team_columns()
